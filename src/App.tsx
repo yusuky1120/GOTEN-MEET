@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { createGameConfig } from './game/houseGame2';
 
+const MAP_LABELS = new Set(['キッチン', '廊下', 'リビング', '作業部屋', '玄関']);
+
 export default function App() {
   const gameRootRef = useRef<HTMLDivElement>(null);
   const [roomName, setRoomName] = useState('玄関');
@@ -16,8 +18,28 @@ export default function App() {
     window.addEventListener('goten:room-change', onRoomChange);
     const game = new Phaser.Game(createGameConfig(gameRootRef.current));
 
+    const removeMapLabels = () => {
+      let removed = 0;
+
+      for (const scene of game.scene.getScenes(true)) {
+        for (const child of [...scene.children.list]) {
+          if (child instanceof Phaser.GameObjects.Text && MAP_LABELS.has(child.text)) {
+            child.destroy();
+            removed += 1;
+          }
+        }
+      }
+
+      if (removed > 0) {
+        game.events.off(Phaser.Core.Events.POST_STEP, removeMapLabels);
+      }
+    };
+
+    game.events.on(Phaser.Core.Events.POST_STEP, removeMapLabels);
+
     return () => {
       window.removeEventListener('goten:room-change', onRoomChange);
+      game.events.off(Phaser.Core.Events.POST_STEP, removeMapLabels);
       game.destroy(true);
     };
   }, []);
