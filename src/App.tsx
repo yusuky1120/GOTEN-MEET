@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
-import { createGameConfig } from './game/createGame';
+import { createGameConfig } from './game/houseGame';
 
 export default function App() {
   const gameRootRef = useRef<HTMLDivElement>(null);
