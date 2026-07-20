@@ -10,21 +10,37 @@ type Zone = {
 
 type ChairDirection = 'up' | 'down' | 'left' | 'right';
 
+type ChairSeat = {
+  x: number;
+  y: number;
+  direction: ChairDirection;
+  standX: number;
+  standY: number;
+};
+
 const WORLD_WIDTH = 1040;
 const WORLD_HEIGHT = 860;
 const WALL = 12;
 const WALL_COLOR = 0x493d30;
+const MOVE_SPEED = 175;
+const INTERACTION_DISTANCE = 66;
 
 class HouseScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private playerShadow!: Phaser.GameObjects.Ellipse;
   private playerLabel!: Phaser.GameObjects.Text;
+  private interactionPrompt!: Phaser.GameObjects.Text;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
+  private interactKey!: Phaser.Input.Keyboard.Key;
+  private cancelKey!: Phaser.Input.Keyboard.Key;
   private zones: Zone[] = [];
+  private chairs: ChairSeat[] = [];
   private currentRoom = '';
   private lastStepAt = 0;
   private stepFrame = false;
+  private seatedChair: ChairSeat | null = null;
+  private interactionDismissedUntil = 0;
 
   create() {
     this.cameras.main.setBackgroundColor('#252019');
@@ -40,16 +56,47 @@ class HouseScene extends Phaser.Scene {
       'W' | 'A' | 'S' | 'D',
       Phaser.Input.Keyboard.Key
     >;
+    this.interactKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    this.cancelKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+
+    this.interactionPrompt = this.add
+      .text(480, 624, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '15px',
+        color: '#fffaf0',
+        backgroundColor: 'rgba(28, 31, 25, 0.94)',
+        padding: { x: 16, y: 10 },
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(30000)
+      .setVisible(false);
 
     this.cameras.main
       .setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT)
-      .startFollow(this.player, true, 0.1, 0.1)
-      .setZoom(0.95);
+      .startFollow(this.player, true, 0.11, 0.11)
+      .setZoom(1.08);
 
     this.updateRoom();
   }
 
   update(time: number) {
+    if (this.seatedChair) {
+      this.player.setVelocity(0, 0);
+
+      if (
+        Phaser.Input.Keyboard.JustDown(this.interactKey) ||
+        Phaser.Input.Keyboard.JustDown(this.cancelKey)
+      ) {
+        this.standUp();
+      }
+
+      this.updatePlayerPresentation(false);
+      this.updateRoom();
+      return;
+    }
+
     let x = 0;
     let y = 0;
 
@@ -60,7 +107,7 @@ class HouseScene extends Phaser.Scene {
 
     const velocity = new Phaser.Math.Vector2(x, y);
     const isMoving = velocity.lengthSq() > 0;
-    if (isMoving) velocity.normalize().scale(175);
+    if (isMoving) velocity.normalize().scale(MOVE_SPEED);
 
     this.player.setVelocity(velocity.x, velocity.y);
     if (x < 0) this.player.setFlipX(true);
@@ -75,11 +122,92 @@ class HouseScene extends Phaser.Scene {
       this.player.setTexture('avatar-idle');
     }
 
-    this.playerShadow.setPosition(this.player.x, this.player.y + 19);
+    this.updateChairInteraction(time);
+    this.updatePlayerPresentation(isMoving);
+    this.updateRoom();
+  }
+
+  private updateChairInteraction(time: number) {
+    if (time < this.interactionDismissedUntil) {
+      this.interactionPrompt.setVisible(false);
+      return;
+    }
+
+    const chair = this.findNearestChair();
+    if (!chair) {
+      this.interactionPrompt.setVisible(false);
+      return;
+    }
+
+    this.interactionPrompt
+      .setText('椅子に座りますか？   [E] はい   [Esc] いいえ')
+      .setVisible(true);
+
+    if (Phaser.Input.Keyboard.JustDown(this.interactKey)) {
+      this.sitOnChair(chair);
+    } else if (Phaser.Input.Keyboard.JustDown(this.cancelKey)) {
+      this.interactionPrompt.setVisible(false);
+      this.interactionDismissedUntil = time + 900;
+    }
+  }
+
+  private findNearestChair(): ChairSeat | null {
+    let nearest: ChairSeat | null = null;
+    let nearestDistance = INTERACTION_DISTANCE;
+
+    for (const chair of this.chairs) {
+      const distance = Phaser.Math.Distance.Between(
+        this.player.x,
+        this.player.y,
+        chair.x,
+        chair.y,
+      );
+
+      if (distance < nearestDistance) {
+        nearest = chair;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest;
+  }
+
+  private sitOnChair(chair: ChairSeat) {
+    this.seatedChair = chair;
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.stop();
+    body.enable = false;
+
+    this.player.setPosition(chair.x, chair.y - 3);
+    this.player.setTexture('avatar-sit');
+    this.player.setFlipX(chair.direction === 'left');
+    this.interactionPrompt
+      .setText('着席中   [E] または [Esc] で立つ')
+      .setVisible(true);
+  }
+
+  private standUp() {
+    const chair = this.seatedChair;
+    if (!chair) return;
+
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.enable = true;
+    this.player.setPosition(chair.standX, chair.standY);
+    this.player.setTexture('avatar-idle');
+    this.player.setFlipX(false);
+    this.seatedChair = null;
+    this.interactionPrompt.setVisible(false);
+    this.interactionDismissedUntil = this.time.now + 450;
+  }
+
+  private updatePlayerPresentation(_isMoving: boolean) {
+    const shadowYOffset = this.seatedChair ? 15 : 19;
+    const labelYOffset = this.seatedChair ? 35 : 39;
+
+    this.playerShadow.setPosition(this.player.x, this.player.y + shadowYOffset);
     this.playerShadow.setDepth(this.player.y - 2);
     this.player.setDepth(this.player.y + 20);
-    this.playerLabel.setPosition(this.player.x, this.player.y - 39);
-    this.updateRoom();
+    this.playerLabel.setPosition(this.player.x, this.player.y - labelYOffset);
   }
 
   private drawMap() {
@@ -127,14 +255,12 @@ class HouseScene extends Phaser.Scene {
     this.addLabel(workRoom, 18, 18);
     this.addLabel(entrance, 112, 68);
 
-    // キッチン外周。下中央は廊下へ広く開いている。
+    // キッチンは下側を完全に開放し、茶色い敷居・区切りを置かない。
     addWall(440, 70, 520, WALL);
     addWall(180, 155, WALL, 170);
     addWall(700, 155, WALL, 170);
-    addWall(285, 240, 210, WALL);
-    addWall(595, 240, 210, WALL);
 
-    // 横廊下外周。
+    // 横廊下の外周。キッチン直下には壁を置かない。
     addWall(150, 240, 60, WALL);
     addWall(810, 240, 220, WALL);
     addWall(120, 275, WALL, 70);
@@ -173,7 +299,6 @@ class HouseScene extends Phaser.Scene {
   private drawKitchenObjects(
     addCollider: (x: number, y: number, width: number, height: number) => unknown,
   ) {
-    // 壁付けキッチンカウンター。
     const counterX = 430;
     const counterY = 108;
     const counterWidth = 360;
@@ -191,7 +316,6 @@ class HouseScene extends Phaser.Scene {
       .setStrokeStyle(2, 0x857b70)
       .setDepth(counterY + counterHeight + 2);
 
-    // シンク、コンロ、収納扉。
     this.add
       .rectangle(360, 92, 92, 28, 0xaeb8ba)
       .setStrokeStyle(2, 0x697477)
@@ -206,7 +330,6 @@ class HouseScene extends Phaser.Scene {
       this.add.circle(x, 124, 2, 0xd6b476).setDepth(169);
     }
 
-    // 冷蔵庫。
     this.add.rectangle(640, 117, 54, 92, 0xc8cbc7).setStrokeStyle(3, 0x777b78).setDepth(170);
     this.add.line(0, 0, 614, 112, 666, 112, 0x777b78, 1).setOrigin(0).setDepth(171);
     this.add.rectangle(649, 95, 3, 20, 0x6c706c).setDepth(172);
@@ -215,7 +338,6 @@ class HouseScene extends Phaser.Scene {
     addCollider(counterX, counterY, counterWidth, counterHeight + 35);
     addCollider(640, 117, 54, 92);
 
-    // 小さなダイニングテーブルと椅子。
     this.drawWoodTable(430, 195, 150, 46, addCollider);
     this.drawChair(330, 196, 'right', addCollider);
     this.drawChair(530, 196, 'left', addCollider);
@@ -224,7 +346,6 @@ class HouseScene extends Phaser.Scene {
   private drawLivingObjects(
     addCollider: (x: number, y: number, width: number, height: number) => unknown,
   ) {
-    // ソファ。背もたれ・座面・肘掛けを分けて描く。
     const sofaX = 180;
     const sofaY = 455;
     this.add.ellipse(sofaX + 4, sofaY + 78, 82, 34, 0x2e241e, 0.25).setDepth(500);
@@ -235,60 +356,55 @@ class HouseScene extends Phaser.Scene {
     this.add.rectangle(sofaX - 19, sofaY, 18, 174, 0x3e593e).setDepth(sofaY + 96);
     this.add.rectangle(sofaX, sofaY - 80, 58, 20, 0x607a5d).setDepth(sofaY + 97);
     this.add.rectangle(sofaX, sofaY, 51, 2, 0x789176).setDepth(sofaY + 98);
-    this.add.line(0, 0, sofaX - 23, sofaY, sofaX + 23, sofaY, 0x324733, 1).setOrigin(0).setDepth(sofaY + 99);
     addCollider(sofaX, sofaY, 72, 188);
 
-    // ローテーブル。
     this.drawWoodTable(335, 470, 132, 78, addCollider);
 
-    // テレビとテレビ台。
     this.add.rectangle(488, 452, 30, 168, 0x5a4635).setStrokeStyle(2, 0x33291f).setDepth(540);
     this.add.rectangle(482, 444, 18, 120, 0x171a1c).setStrokeStyle(3, 0x4b5357).setDepth(541);
     this.add.rectangle(482, 444, 10, 103, 0x27343b).setDepth(542);
     this.add.rectangle(488, 535, 45, 24, 0x76583d).setStrokeStyle(2, 0x463322).setDepth(543);
     addCollider(488, 452, 42, 168);
 
-    // 木床側の机と椅子。
-    this.drawWoodTable(345, 655, 145, 46, addCollider);
-    this.drawChair(345, 610, 'down', addCollider);
+    // 木床側の机を縦長に変更。
+    this.drawWoodTable(355, 644, 52, 132, addCollider);
+    this.drawChair(420, 644, 'left', addCollider);
   }
 
   private drawWorkRoomObjects(
     addCollider: (x: number, y: number, width: number, height: number) => unknown,
   ) {
-    // 部屋中央の長机。
-    this.drawWoodTable(785, 495, 176, 72, addCollider);
+    // 中央の長机を縦長に変更。
+    this.drawWoodTable(790, 490, 72, 190, addCollider);
 
-    // 長机を囲む椅子。移動できる余白も残す。
-    this.drawChair(730, 428, 'down', addCollider);
-    this.drawChair(840, 428, 'down', addCollider);
-    this.drawChair(730, 563, 'up', addCollider);
-    this.drawChair(840, 563, 'up', addCollider);
-    this.drawChair(895, 495, 'left', addCollider);
+    // 長机を囲む椅子。通路を残した配置。
+    this.drawChair(720, 425, 'right', addCollider);
+    this.drawChair(720, 545, 'right', addCollider);
+    this.drawChair(860, 425, 'left', addCollider);
+    this.drawChair(860, 545, 'left', addCollider);
+    this.drawChair(790, 610, 'up', addCollider);
 
-    // 壁際の本棚。
-    this.add.rectangle(680, 625, 48, 132, 0x644b35).setStrokeStyle(3, 0x3c2c20).setDepth(700);
-    for (const y of [585, 615, 645, 675]) {
-      this.add.line(0, 0, 658, y, 702, y, 0x35271d, 1).setOrigin(0).setDepth(701);
+    // 本棚を小型化し、下側の通路を確保。
+    this.add.rectangle(884, 660, 36, 70, 0x644b35).setStrokeStyle(3, 0x3c2c20).setDepth(710);
+    for (const y of [640, 660, 680]) {
+      this.add.line(0, 0, 868, y, 900, y, 0x35271d, 1).setOrigin(0).setDepth(711);
     }
-    for (let i = 0; i < 6; i += 1) {
+    for (let i = 0; i < 4; i += 1) {
       const color = [0x6e4f3c, 0x596b54, 0x8a6c45][i % 3];
-      this.add.rectangle(666 + i * 6, 598, 5, 20, color).setDepth(702);
+      this.add.rectangle(873 + i * 7, 650, 5, 17, color).setDepth(712);
     }
-    addCollider(680, 625, 48, 132);
+    addCollider(884, 660, 36, 70);
   }
 
   private drawEntranceObjects(
     addCollider: (x: number, y: number, width: number, height: number) => unknown,
   ) {
-    // 下駄箱。
     this.add.rectangle(470, 766, 42, 78, 0x71553b).setStrokeStyle(3, 0x433224).setDepth(820);
     this.add.line(0, 0, 451, 750, 489, 750, 0x433224, 1).setOrigin(0).setDepth(821);
     this.add.line(0, 0, 451, 774, 489, 774, 0x433224, 1).setOrigin(0).setDepth(821);
     this.add.circle(480, 762, 2, 0xd1ae72).setDepth(822);
     addCollider(470, 766, 42, 78);
 
-    // 玄関マット。
     this.add
       .rectangle(610, 790, 90, 34, 0x65734e)
       .setStrokeStyle(2, 0x3d482f)
@@ -312,13 +428,19 @@ class HouseScene extends Phaser.Scene {
 
     const grain = this.add.graphics().setDepth(bottom + 2);
     grain.lineStyle(1, 0x624328, 0.65);
-    for (let offset = -width / 2 + 18; offset < width / 2; offset += 28) {
-      grain.lineBetween(x + offset, y - height / 2 + 8, x + offset + 9, y + height / 2 - 8);
+    const grainCount = Math.max(2, Math.floor(width / 28));
+    for (let i = 1; i <= grainCount; i += 1) {
+      const offsetX = -width / 2 + (width * i) / (grainCount + 1);
+      grain.lineBetween(
+        x + offsetX,
+        y - height / 2 + 8,
+        x + offsetX + 6,
+        y + height / 2 - 8,
+      );
     }
 
-    // 脚は少し内側に配置。
-    this.add.rectangle(x - width / 2 + 16, bottom + 7, 10, 18, 0x4a3222).setDepth(bottom - 1);
-    this.add.rectangle(x + width / 2 - 16, bottom + 7, 10, 18, 0x4a3222).setDepth(bottom - 1);
+    this.add.rectangle(x - width / 2 + 13, bottom + 7, 9, 18, 0x4a3222).setDepth(bottom - 1);
+    this.add.rectangle(x + width / 2 - 13, bottom + 7, 9, 18, 0x4a3222).setDepth(bottom - 1);
     addCollider(x, y, width, height);
   }
 
@@ -351,6 +473,14 @@ class HouseScene extends Phaser.Scene {
     }
 
     addCollider(x, y, width, height);
+
+    const standDistance = 45;
+    const standX =
+      direction === 'left' ? x + standDistance : direction === 'right' ? x - standDistance : x;
+    const standY =
+      direction === 'up' ? y + standDistance : direction === 'down' ? y - standDistance : y;
+
+    this.chairs.push({ x, y, direction, standX, standY });
   }
 
   private drawKitchenFloor(zone: Zone) {
@@ -383,10 +513,13 @@ class HouseScene extends Phaser.Scene {
     const grid = this.add.graphics().setDepth(2);
     grid.lineStyle(3, 0x7e895b, 0.7);
 
-    const matWidth = zone.width / 4;
-    const matHeight = zone.height / 3;
-    for (let row = 0; row < 3; row += 1) {
-      for (let col = 0; col < 4; col += 1) {
+    const columns = zone.width < 320 ? 3 : 4;
+    const rows = 3;
+    const matWidth = zone.width / columns;
+    const matHeight = zone.height / rows;
+
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < columns; col += 1) {
         const x = zone.x + col * matWidth;
         const y = zone.y + row * matHeight;
         grid.strokeRect(x + 2, y + 2, matWidth - 4, matHeight - 4);
@@ -408,7 +541,6 @@ class HouseScene extends Phaser.Scene {
       height: zone.height - tatamiHeight,
     });
 
-    // 畳と板間の境目。
     this.add
       .rectangle(zone.x + zone.width / 2, zone.y + tatamiHeight, zone.width, 7, 0x66513a)
       .setDepth(3);
@@ -440,8 +572,9 @@ class HouseScene extends Phaser.Scene {
   }
 
   private createPlayer(x: number, y: number) {
-    this.createAvatarTexture('avatar-idle', false);
-    this.createAvatarTexture('avatar-step', true);
+    this.createAvatarTexture('avatar-idle', false, false);
+    this.createAvatarTexture('avatar-step', true, false);
+    this.createAvatarTexture('avatar-sit', false, true);
 
     this.playerShadow = this.add
       .ellipse(x, y + 19, 30, 12, 0x17130f, 0.28)
@@ -464,13 +597,14 @@ class HouseScene extends Phaser.Scene {
       .setDepth(10000);
   }
 
-  private createAvatarTexture(key: string, stepping: boolean) {
+  private createAvatarTexture(key: string, stepping: boolean, sitting: boolean) {
+    if (this.textures.exists(key)) return;
+
     const texture = this.textures.createCanvas(key, 40, 56)!;
     const context = texture.context;
     context.imageSmoothingEnabled = false;
     context.clearRect(0, 0, 40, 56);
 
-    // 髪と顔。
     context.fillStyle = '#26352d';
     context.fillRect(11, 3, 18, 5);
     context.fillRect(8, 8, 24, 11);
@@ -482,11 +616,10 @@ class HouseScene extends Phaser.Scene {
     context.fillStyle = '#c98366';
     context.fillRect(18, 19, 4, 1);
 
-    // 首、胴体、腕。
     context.fillStyle = '#e5ad86';
     context.fillRect(17, 23, 6, 4);
     context.fillStyle = '#3e7392';
-    context.fillRect(9, 27, 22, 18);
+    context.fillRect(9, 27, 22, sitting ? 16 : 18);
     context.fillStyle = '#315f79';
     context.fillRect(6, 29, 5, 15);
     context.fillRect(29, 29, 5, 15);
@@ -494,9 +627,14 @@ class HouseScene extends Phaser.Scene {
     context.fillRect(6, 42, 5, 4);
     context.fillRect(29, 42, 5, 4);
 
-    // 脚と靴。歩行フレームでは左右を少しずらす。
     context.fillStyle = '#2b3540';
-    if (stepping) {
+    if (sitting) {
+      context.fillRect(10, 42, 9, 7);
+      context.fillRect(21, 42, 9, 7);
+      context.fillStyle = '#1c2228';
+      context.fillRect(8, 48, 12, 5);
+      context.fillRect(20, 48, 12, 5);
+    } else if (stepping) {
       context.fillRect(11, 44, 7, 8);
       context.fillRect(23, 43, 7, 10);
       context.fillStyle = '#1c2228';
@@ -506,8 +644,8 @@ class HouseScene extends Phaser.Scene {
       context.fillRect(11, 44, 7, 9);
       context.fillRect(22, 44, 7, 9);
       context.fillStyle = '#1c2228';
-      context.fillRect(9, 52, 9, 3);
-      context.fillRect(22, 52, 9, 3);
+      context.fillRect(9, 52, 10, 3);
+      context.fillRect(22, 52, 10, 3);
     }
 
     texture.refresh();
@@ -524,7 +662,6 @@ class HouseScene extends Phaser.Scene {
       )?.name ?? '共用スペース';
 
     if (room === this.currentRoom) return;
-
     this.currentRoom = room;
     window.dispatchEvent(new CustomEvent('goten:room-change', { detail: room }));
   }
