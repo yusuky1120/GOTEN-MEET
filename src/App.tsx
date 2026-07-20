@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
-import { createGameConfig } from './game/houseGame';
+import { createGameConfig } from './game/houseGame2';
 
 export default function App() {
   const gameRootRef = useRef<HTMLDivElement>(null);
@@ -42,8 +42,8 @@ export default function App() {
       <aside className="help-card">
         <h2>操作方法</h2>
         <p><kbd>WASD</kbd> または <kbd>矢印キー</kbd> で移動</p>
-        <p><kbd>E</kbd> 近くの椅子に座る／椅子から立つ</p>
-        <p><kbd>Esc</kbd> 着席確認を閉じる／椅子から立つ</p>
+        <p><kbd>E</kbd> 近くの椅子・ソファに座る／立つ</p>
+        <p><kbd>Esc</kbd> 着席確認を閉じる／立つ</p>
         <p>壁・家具には当たり判定があります。</p>
         <div className="legend">
           <span><i className="legend-dot room" />部屋</span>
