@@ -3,6 +3,8 @@ import Phaser from 'phaser';
 import { createGameConfig } from './game/houseGame2';
 
 const MAP_LABELS = new Set(['キッチン', '廊下', 'リビング', '作業部屋', '玄関']);
+const WALL_COLOR = 0x493d30;
+const ENTRANCE_MAT_COLOR = 0x65734e;
 
 export default function App() {
   const gameRootRef = useRef<HTMLDivElement>(null);
@@ -18,28 +20,93 @@ export default function App() {
     window.addEventListener('goten:room-change', onRoomChange);
     const game = new Phaser.Game(createGameConfig(gameRootRef.current));
 
-    const removeMapLabels = () => {
+    let labelsRemoved = false;
+    let mapTweaksApplied = false;
+
+    const finalizeMap = () => {
       let removed = 0;
+      let tweaked = 0;
 
       for (const scene of game.scene.getScenes(true)) {
         for (const child of [...scene.children.list]) {
           if (child instanceof Phaser.GameObjects.Text && MAP_LABELS.has(child.text)) {
             child.destroy();
             removed += 1;
+            continue;
+          }
+
+          if (child instanceof Phaser.GameObjects.Rectangle) {
+            // 玄関の出口を中央廊下（x=520〜640）と一直線にする。
+            if (child.fillColor === WALL_COLOR && child.y === 880 && child.x === 485) {
+              child.setPosition(470, 880).setDisplaySize(100, 12);
+              const wall = child as Phaser.GameObjects.Rectangle & {
+                body?: Phaser.Physics.Arcade.StaticBody;
+              };
+              wall.body?.updateFromGameObject();
+              tweaked += 1;
+              continue;
+            }
+
+            if (child.fillColor === WALL_COLOR && child.y === 880 && child.x === 705) {
+              child.setPosition(700, 880).setDisplaySize(120, 12);
+              const wall = child as Phaser.GameObjects.Rectangle & {
+                body?: Phaser.Physics.Arcade.StaticBody;
+              };
+              wall.body?.updateFromGameObject();
+              tweaked += 1;
+              continue;
+            }
+
+            // 玄関マットも中央廊下と出口の軸上へ移動する。
+            if (child.fillColor === ENTRANCE_MAT_COLOR && child.y === 850 && child.x === 610) {
+              child.setX(580);
+              tweaked += 1;
+              continue;
+            }
+
+            // シンクとコンロの位置を左右で入れ替える。
+            if (child.fillColor === 0xaeb8ba && child.y === 92 && child.x === 360) {
+              child.setX(505);
+              tweaked += 1;
+              continue;
+            }
+
+            if (child.fillColor === 0x323230 && child.y === 91 && child.x === 505) {
+              child.setX(360);
+              tweaked += 1;
+            }
+          } else if (child instanceof Phaser.GameObjects.Ellipse) {
+            if (child.fillColor === 0x7f8d90 && child.y === 92 && child.x === 360) {
+              child.setX(505);
+              tweaked += 1;
+            }
+          } else if (child instanceof Phaser.GameObjects.Arc) {
+            if (child.fillColor === 0x191918 && child.y === 91) {
+              if (child.x === 480) {
+                child.setX(335);
+                tweaked += 1;
+              } else if (child.x === 530) {
+                child.setX(385);
+                tweaked += 1;
+              }
+            }
           }
         }
       }
 
-      if (removed > 0) {
-        game.events.off(Phaser.Core.Events.POST_STEP, removeMapLabels);
+      if (removed > 0) labelsRemoved = true;
+      if (tweaked >= 8) mapTweaksApplied = true;
+
+      if (labelsRemoved && mapTweaksApplied) {
+        game.events.off(Phaser.Core.Events.POST_STEP, finalizeMap);
       }
     };
 
-    game.events.on(Phaser.Core.Events.POST_STEP, removeMapLabels);
+    game.events.on(Phaser.Core.Events.POST_STEP, finalizeMap);
 
     return () => {
       window.removeEventListener('goten:room-change', onRoomChange);
-      game.events.off(Phaser.Core.Events.POST_STEP, removeMapLabels);
+      game.events.off(Phaser.Core.Events.POST_STEP, finalizeMap);
       game.destroy(true);
     };
   }, []);
