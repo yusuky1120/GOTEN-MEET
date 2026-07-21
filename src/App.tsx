@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { createGameConfig } from './game/houseGame2';
+import VoicePanel from './voice/VoicePanel';
 
 const MAP_LABELS = new Set(['キッチン', '廊下', 'リビング', '作業部屋', '玄関']);
 const WALL_COLOR = 0x493d30;
@@ -140,6 +141,8 @@ export default function App() {
           <span><i className="legend-dot avatar" />あなた</span>
         </div>
       </aside>
+
+      <VoicePanel currentMapRoom={roomName} />
     </main>
   );
 }

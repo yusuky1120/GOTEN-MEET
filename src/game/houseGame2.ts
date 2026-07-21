@@ -1,4 +1,19 @@
 import Phaser from 'phaser';
+import {
+  MIN_POSITION_DELTA,
+  MOVING_POSITION_INTERVAL_MS,
+  STATIONARY_HEARTBEAT_INTERVAL_MS,
+} from '../realtime/playerPositionConstants';
+import type { PlayerDirection } from '../realtime/playerPositionTypes';
+import { ensureAllClothingTextures, ensureDefaultAvatarTextures } from './avatarTextures';
+import {
+  dispatchLocalPlayerPosition,
+  LOCAL_PLAYER_CLOTHING_EVENT,
+  type LocalPlayerClothingDetail,
+} from './gamePositionEvents';
+import { isTextEntryFocused } from './isTextEntryFocused';
+import { clothingTextureKey } from './playerClothing';
+import { RemotePlayersManager } from './remotePlayers';
 
 type Zone = {
   name: string;
@@ -8,7 +23,7 @@ type Zone = {
   height: number;
 };
 
-type Direction = 'up' | 'down' | 'left' | 'right';
+type Direction = PlayerDirection;
 type SeatKind = 'chair' | 'sofa';
 
 type Seat = {
@@ -47,6 +62,15 @@ class HouseScene extends Phaser.Scene {
   private lastStep = 0;
   private stepping = false;
   private dismissedUntil = 0;
+  private facing: Direction = 'down';
+  private remotePlayers: RemotePlayersManager | null = null;
+  private lastPositionEmitAt = 0;
+  private lastEmittedX = Number.NaN;
+  private lastEmittedY = Number.NaN;
+  private lastEmittedDirection: Direction = 'down';
+  private lastEmittedMoving = false;
+  private lastLocalMoving = false;
+  private clothingVariant = 0;
 
   create() {
     this.cameras.main.setBackgroundColor('#252019');
@@ -86,10 +110,32 @@ class HouseScene extends Phaser.Scene {
       .startFollow(this.player, true, 0.11, 0.11)
       .setZoom(1.08);
 
+    this.remotePlayers = new RemotePlayersManager(this);
+    this.remotePlayers.bind();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.handleShutdown, this);
+    window.addEventListener(LOCAL_PLAYER_CLOTHING_EVENT, this.onClothingChange);
+
     this.updateRoom();
+    this.emitLocalPosition(false, performance.now(), true);
   }
 
-  update(time: number) {
+  update(time: number, delta: number) {
+    this.remotePlayers?.update(delta, time);
+
+    if (isTextEntryFocused()) {
+      this.player.setVelocity(0, 0);
+      this.stepping = false;
+      this.player.setTexture(clothingTextureKey('idle', this.clothingVariant));
+      this.presentPlayer();
+      this.updateRoom();
+      this.emitLocalPosition(false, time);
+      const forceStop = this.lastLocalMoving;
+      this.lastLocalMoving = false;
+      this.emitRemoteDistances(time, forceStop);
+      return;
+    }
+
     if (this.seated) {
       this.player.setVelocity(0, 0);
       if (
@@ -100,6 +146,10 @@ class HouseScene extends Phaser.Scene {
       }
       this.presentPlayer();
       this.updateRoom();
+      this.emitLocalPosition(false, time);
+      const forceStop = this.lastLocalMoving;
+      this.lastLocalMoving = false;
+      this.emitRemoteDistances(time, forceStop);
       return;
     }
 
@@ -115,21 +165,86 @@ class HouseScene extends Phaser.Scene {
     if (moving) velocity.normalize().scale(MOVE_SPEED);
 
     this.player.setVelocity(velocity.x, velocity.y);
-    if (x < 0) this.player.setFlipX(true);
-    if (x > 0) this.player.setFlipX(false);
+    if (x !== 0 || y !== 0) {
+      if (x < 0) this.facing = 'left';
+      else if (x > 0) this.facing = 'right';
+      else if (y < 0) this.facing = 'up';
+      else if (y > 0) this.facing = 'down';
+    }
+    if (this.facing === 'left') this.player.setFlipX(true);
+    if (this.facing === 'right') this.player.setFlipX(false);
 
     if (moving && time - this.lastStep > 170) {
       this.stepping = !this.stepping;
-      this.player.setTexture(this.stepping ? 'avatar-step' : 'avatar-idle');
+      this.player.setTexture(
+        clothingTextureKey(this.stepping ? 'step' : 'idle', this.clothingVariant),
+      );
       this.lastStep = time;
     } else if (!moving) {
       this.stepping = false;
-      this.player.setTexture('avatar-idle');
+      this.player.setTexture(clothingTextureKey('idle', this.clothingVariant));
     }
 
     this.updateSeatPrompt(time);
     this.presentPlayer();
     this.updateRoom();
+    this.emitLocalPosition(moving, time);
+    this.emitRemoteDistances(time, this.lastLocalMoving && !moving);
+    this.lastLocalMoving = moving;
+  }
+
+  private emitRemoteDistances(timeMs: number, force = false): void {
+    this.remotePlayers?.updateDistances(this.player.x, this.player.y, timeMs, { force });
+  }
+
+  private handleShutdown = () => {
+    window.removeEventListener(LOCAL_PLAYER_CLOTHING_EVENT, this.onClothingChange);
+    this.remotePlayers?.destroy();
+    this.remotePlayers = null;
+  };
+
+  private readonly onClothingChange = (event: Event) => {
+    const detail = (event as CustomEvent<LocalPlayerClothingDetail>).detail;
+    this.clothingVariant = detail.clothingVariant;
+    ensureAllClothingTextures(this);
+    const pose = this.seated ? 'sit' : this.stepping ? 'step' : 'idle';
+    this.player.setTexture(clothingTextureKey(pose, this.clothingVariant));
+    if (this.facing === 'left') this.player.setFlipX(true);
+    this.emitLocalPosition(this.lastLocalMoving, performance.now(), true);
+  };
+
+  private emitLocalPosition(moving: boolean, timeMs: number, force = false): void {
+    const x = this.player.x;
+    const y = this.player.y;
+    const direction = this.seated ? this.seated.direction : this.facing;
+    const elapsed = timeMs - this.lastPositionEmitAt;
+    const movedEnough =
+      !Number.isFinite(this.lastEmittedX) ||
+      Math.hypot(x - this.lastEmittedX, y - this.lastEmittedY) >= MIN_POSITION_DELTA;
+    const directionChanged = direction !== this.lastEmittedDirection;
+    const movingChanged = moving !== this.lastEmittedMoving;
+    const stoppedNow = this.lastEmittedMoving && !moving;
+
+    let shouldEmit = force;
+    if (stoppedNow || directionChanged) {
+      shouldEmit = true;
+    } else if (moving) {
+      shouldEmit = elapsed >= MOVING_POSITION_INTERVAL_MS && (movedEnough || directionChanged);
+    } else if (elapsed >= STATIONARY_HEARTBEAT_INTERVAL_MS) {
+      shouldEmit = true;
+    } else if (movingChanged && movedEnough) {
+      shouldEmit = true;
+    }
+
+    if (!shouldEmit) return;
+
+    this.lastPositionEmitAt = timeMs;
+    this.lastEmittedX = x;
+    this.lastEmittedY = y;
+    this.lastEmittedDirection = direction;
+    this.lastEmittedMoving = moving;
+
+    dispatchLocalPlayerPosition({ x, y, direction, moving });
   }
 
   private updateSeatPrompt(time: number) {
@@ -185,11 +300,14 @@ class HouseScene extends Phaser.Scene {
 
     this.player
       .setPosition(seat.x, seat.y - 3)
-      .setTexture('avatar-sit')
+      .setTexture(clothingTextureKey('sit', this.clothingVariant))
       .setFlipX(seat.direction === 'left');
+    this.facing = seat.direction;
+    this.stepping = false;
 
     this.prompt.setText('着席中   [E] または [Esc] で立つ').setVisible(true);
     this.presentPlayer();
+    this.emitLocalPosition(false, performance.now(), true);
   }
 
   private standUp() {
@@ -201,13 +319,15 @@ class HouseScene extends Phaser.Scene {
 
     this.player
       .setPosition(seat.standX, seat.standY)
-      .setTexture('avatar-idle')
-      .setFlipX(false);
+      .setTexture(clothingTextureKey('idle', this.clothingVariant))
+      .setFlipX(seat.direction === 'left');
+    this.facing = seat.direction === 'left' || seat.direction === 'right' ? seat.direction : 'down';
 
     this.seated = null;
     this.prompt.setVisible(false);
     this.dismissedUntil = this.time.now + 450;
     this.presentPlayer();
+    this.emitLocalPosition(false, performance.now(), true);
   }
 
   private presentPlayer() {
@@ -667,12 +787,15 @@ class HouseScene extends Phaser.Scene {
   }
 
   private createPlayer(x: number, y: number) {
-    this.avatarTexture('avatar-idle', false, false);
-    this.avatarTexture('avatar-step', true, false);
-    this.avatarTexture('avatar-sit', false, true);
+    ensureDefaultAvatarTextures(this);
+    ensureAllClothingTextures(this);
 
     this.shadow = this.add.ellipse(x, y + 19, 30, 12, 0x17130f, 0.28);
-    this.player = this.physics.add.sprite(x, y, 'avatar-idle');
+    this.player = this.physics.add.sprite(
+      x,
+      y,
+      clothingTextureKey('idle', this.clothingVariant),
+    );
     this.player.body!.setSize(22, 18);
     this.player.body!.setOffset(9, 34);
     this.label = this.add
@@ -686,60 +809,6 @@ class HouseScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.presentPlayer();
-  }
-
-  private avatarTexture(key: string, stepping: boolean, sitting: boolean) {
-    if (this.textures.exists(key)) return;
-
-    const texture = this.textures.createCanvas(key, 40, 56)!;
-    const context = texture.context;
-    context.imageSmoothingEnabled = false;
-    context.clearRect(0, 0, 40, 56);
-
-    context.fillStyle = '#26352d';
-    context.fillRect(11, 3, 18, 5);
-    context.fillRect(8, 8, 24, 11);
-    context.fillStyle = '#efc09b';
-    context.fillRect(11, 10, 18, 13);
-    context.fillStyle = '#2b2b29';
-    context.fillRect(14, 14, 2, 2);
-    context.fillRect(24, 14, 2, 2);
-    context.fillStyle = '#c98366';
-    context.fillRect(18, 19, 4, 1);
-
-    context.fillStyle = '#e5ad86';
-    context.fillRect(17, 23, 6, 4);
-    context.fillStyle = '#3e7392';
-    context.fillRect(9, 27, 22, sitting ? 16 : 18);
-    context.fillStyle = '#315f79';
-    context.fillRect(6, 29, 5, 15);
-    context.fillRect(29, 29, 5, 15);
-    context.fillStyle = '#efc09b';
-    context.fillRect(6, 42, 5, 4);
-    context.fillRect(29, 42, 5, 4);
-
-    context.fillStyle = '#2b3540';
-    if (sitting) {
-      context.fillRect(10, 42, 9, 7);
-      context.fillRect(21, 42, 9, 7);
-      context.fillStyle = '#1c2228';
-      context.fillRect(8, 48, 12, 5);
-      context.fillRect(20, 48, 12, 5);
-    } else if (stepping) {
-      context.fillRect(11, 44, 7, 8);
-      context.fillRect(23, 43, 7, 10);
-      context.fillStyle = '#1c2228';
-      context.fillRect(9, 51, 9, 4);
-      context.fillRect(23, 52, 10, 3);
-    } else {
-      context.fillRect(11, 44, 7, 9);
-      context.fillRect(22, 44, 7, 9);
-      context.fillStyle = '#1c2228';
-      context.fillRect(9, 52, 10, 3);
-      context.fillRect(22, 52, 10, 3);
-    }
-
-    texture.refresh();
   }
 
   private updateRoom() {
