@@ -127,6 +127,132 @@ kbd {
 .legend-dot.hall { background: #b3a886; }
 .legend-dot.avatar { background: #3f6d8a; }
 
+.voice-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 22px;
+  z-index: 60;
+  width: min(340px, calc(100vw - 48px));
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 14px;
+  background: rgba(21, 24, 19, .92);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
+  display: grid;
+  gap: 10px;
+}
+.voice-panel__header h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+.voice-panel__header p {
+  margin: 0;
+  color: #d5dacc;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.voice-sync {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #d5dacc;
+  font-size: 12px;
+}
+.voice-sync input {
+  width: 16px;
+  height: 16px;
+  accent-color: #7f9468;
+}
+.voice-panel__form {
+  display: grid;
+  gap: 8px;
+}
+.voice-field {
+  display: grid;
+  gap: 4px;
+  color: #bfc7b7;
+  font-size: 12px;
+}
+.voice-field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #56604e;
+  border-radius: 8px;
+  background: rgba(33, 38, 30, .94);
+  color: #f7f2e7;
+}
+.voice-field input:disabled {
+  opacity: .7;
+}
+.voice-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.voice-panel__actions button,
+.voice-panel__audio-unlock button {
+  padding: 7px 12px;
+  border: 1px solid #65705e;
+  border-radius: 8px;
+  background: #343a30;
+  color: #fff;
+  cursor: pointer;
+}
+.voice-panel__actions button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.voice-panel__status {
+  display: grid;
+  gap: 4px;
+}
+.voice-panel__status p {
+  margin: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #bfc7b7;
+  font-size: 12px;
+}
+.voice-panel__status strong {
+  color: #f7f2e7;
+  font-weight: 600;
+  text-align: right;
+  word-break: break-all;
+}
+.voice-panel__participants {
+  margin: 0;
+  padding-left: 18px;
+  color: #d5dacc;
+  font-size: 12px;
+}
+.voice-panel__audio-unlock {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #8a6a3a;
+  border-radius: 8px;
+  background: rgba(64, 48, 24, .55);
+}
+.voice-panel__audio-unlock p {
+  margin: 0;
+  color: #f0dfc0;
+  font-size: 12px;
+}
+.voice-panel__error {
+  margin: 0;
+  color: #ffb4a8;
+  font-size: 12px;
+}
+.voice-audio-container {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
 @media (max-width: 700px) {
   .topbar {
     height: 82px;
@@ -139,11 +265,18 @@ kbd {
   .game-panel { inset: 82px 0 0; }
   .help-card {
     left: 10px;
-    right: 10px;
-    bottom: 10px;
-    max-width: none;
+    right: auto;
+    bottom: auto;
+    top: 92px;
+    max-width: calc(100vw - 20px);
     padding: 10px 12px;
   }
   .help-card p { font-size: 11px; }
   .legend { display: none; }
+  .voice-panel {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
+  }
 }
