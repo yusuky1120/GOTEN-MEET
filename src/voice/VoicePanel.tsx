@@ -13,6 +13,14 @@ import {
 } from '../game/playerDistanceEvents';
 import { PresenceSession } from '../presence/presenceSession';
 import type { PresenceSessionSnapshot } from '../presence/presenceTypes';
+import {
+  classifiedConnectionError,
+  classifyConnectError,
+  classifyFetchNetworkError,
+  classifyHttpApiFailure,
+  NO_MAPPED_ROOM_MESSAGE,
+  userFacingConnectionMessage,
+} from '../realtime/connectionErrors';
 import { toPresenceState } from '../realtime/playerPresenceCodec';
 import { toLiveKitRoomName } from './roomMapping';
 import type { VoiceSessionSnapshot } from './types';
@@ -48,8 +56,6 @@ const INITIAL_VOICE: VoiceSessionSnapshot = {
   staleParticipantCount: 0,
 };
 
-const NO_MAPPED_ROOM_MESSAGE = '現在のマップ位置に対応する音声ルームがありません';
-
 function isSessionResponse(value: unknown): value is SessionResponse {
   if (value === null || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;
@@ -58,13 +64,6 @@ function isSessionResponse(value: unknown): value is SessionResponse {
     typeof record.participantIdentity === 'string' &&
     typeof record.presenceToken === 'string'
   );
-}
-
-function readErrorMessage(value: unknown, fallback: string): string {
-  if (value === null || typeof value !== 'object') return fallback;
-  const record = value as { error?: { message?: unknown } };
-  if (typeof record.error?.message === 'string') return record.error.message;
-  return fallback;
 }
 
 export type VoicePanelProps = {
@@ -207,7 +206,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         if (error instanceof Error && error.message === 'Operation cancelled') return;
         lastVoiceRoomRef.current = null;
         await presenceSession.notifyRoomChange({ voiceRoomName: null });
-        setLocalError(error instanceof Error ? error.message : '部屋の切り替えに失敗しました');
+        setLocalError(userFacingConnectionMessage(error, 'voice-switch'));
       }
     })();
 
@@ -267,11 +266,17 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
     lastMapRoomRef.current = currentMapRoom || null;
 
     try {
-      const sessionResponse = await fetch('/api/livekit/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ participantName: name }),
-      });
+      let sessionResponse: Response;
+      try {
+        sessionResponse = await fetch('/api/livekit/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ participantName: name }),
+        });
+      } catch (error) {
+        throw classifiedConnectionError(classifyFetchNetworkError(error, 'session'));
+      }
+
       let sessionPayload: unknown = null;
       try {
         sessionPayload = await sessionResponse.json();
@@ -279,8 +284,8 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         sessionPayload = null;
       }
       if (!sessionResponse.ok || !isSessionResponse(sessionPayload)) {
-        throw new Error(
-          readErrorMessage(sessionPayload, `Session request failed (${sessionResponse.status})`),
+        throw classifiedConnectionError(
+          classifyHttpApiFailure(sessionResponse.status, sessionPayload, 'session'),
         );
       }
 
@@ -289,12 +294,16 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         clothingVariant: getPlayerClothingVariant(sessionPayload.participantIdentity),
       });
 
-      await presenceSession.connect({
-        serverUrl: sessionPayload.serverUrl,
-        presenceToken: sessionPayload.presenceToken,
-        participantIdentity: sessionPayload.participantIdentity,
-        participantName: name,
-      });
+      try {
+        await presenceSession.connect({
+          serverUrl: sessionPayload.serverUrl,
+          presenceToken: sessionPayload.presenceToken,
+          participantIdentity: sessionPayload.participantIdentity,
+          participantName: name,
+        });
+      } catch (error) {
+        throw classifiedConnectionError(classifyConnectError(error, 'presence'));
+      }
 
       const latest = lastLocalPositionRef.current;
       if (latest) {
@@ -339,9 +348,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         }
         if (mountedRef.current) {
           setLocalError(
-            voiceError instanceof Error
-              ? `マップ表示のみ接続中（音声エラー）: ${voiceError.message}`
-              : 'マップ表示のみ接続中（音声エラー）',
+            `マップ表示のみ接続中（音声エラー）: ${userFacingConnectionMessage(voiceError, 'voice')}`,
           );
         }
       }
@@ -360,7 +367,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
       }
       if (!mountedRef.current) return;
       if (error instanceof Error && error.message === 'Operation cancelled') return;
-      setLocalError(error instanceof Error ? error.message : 'Failed to connect');
+      setLocalError(userFacingConnectionMessage(error, 'generic'));
     } finally {
       if (mountedRef.current) setConnecting(false);
     }
