@@ -1,5 +1,19 @@
 import type { VoiceSessionSnapshot } from '../voice/types';
 
+export type VoiceControlMode = 'disabled' | 'busy' | 'retry' | 'mute';
+
+export function getVoiceControlMode(
+  joined: boolean,
+  status: VoiceSessionSnapshot['status'],
+): VoiceControlMode {
+  if (!joined) return 'disabled';
+  if (status === 'connecting' || status === 'switching' || status === 'disconnecting') {
+    return 'busy';
+  }
+  if (status === 'connected') return 'mute';
+  return 'retry';
+}
+
 export type MicrophoneButtonProps = {
   joined: boolean;
   voice: VoiceSessionSnapshot;
@@ -39,46 +53,42 @@ export default function MicrophoneButton({
   onRetryVoice,
   onStartAudio,
 }: MicrophoneButtonProps) {
-  const connecting = voice.status === 'connecting' || voice.status === 'switching';
-  const connected = voice.status === 'connected';
-  const hasVoiceError = Boolean(voiceError) || voice.status === 'error';
+  const mode = getVoiceControlMode(joined, voice.status);
+  const unavailable = mode === 'retry';
+  const busy = mode === 'busy';
+  const connected = mode === 'mute';
 
-  let ariaLabel = 'マイク';
+  let ariaLabel = 'マイク（未参加）';
   let ariaPressed: boolean | undefined;
-  let disabled = !joined || connecting;
 
-  if (!joined) {
-    disabled = true;
-    ariaLabel = 'マイク（未参加）';
-  } else if (connecting) {
-    disabled = true;
-    ariaLabel = '音声に接続中';
-  } else if (hasVoiceError && !connected) {
-    disabled = false;
+  if (busy) {
+    ariaLabel = voice.status === 'disconnecting' ? '音声を切断中' : '音声に接続中';
+  } else if (unavailable) {
     ariaLabel = '音声に再接続';
   } else if (connected) {
-    disabled = false;
     ariaPressed = voice.muted;
     ariaLabel = voice.muted ? 'マイクのミュートを解除' : 'マイクをミュート';
   }
 
   function handleClick() {
-    if (!joined) return;
-    if (hasVoiceError && !connected) {
+    if (mode === 'retry') {
       onRetryVoice();
       return;
     }
-    if (connected) {
+    if (mode === 'mute') {
       onToggleMute();
     }
   }
+
+  const showAudioAction = joined && connected && voice.needsAudioStart;
+  const showPopover = showAudioAction || unavailable;
 
   return (
     <div className="mic-control">
       <button
         type="button"
         className={
-          hasVoiceError && !connected
+          unavailable
             ? 'mic-button mic-button--error'
             : voice.muted
               ? 'mic-button mic-button--muted'
@@ -86,25 +96,33 @@ export default function MicrophoneButton({
         }
         aria-label={ariaLabel}
         aria-pressed={ariaPressed}
-        disabled={disabled}
+        disabled={mode === 'disabled' || busy}
         onClick={handleClick}
-        title={voiceError ?? undefined}
+        title={voiceError ?? (unavailable ? '音声に接続されていません' : undefined)}
       >
-        {connecting ? <span className="mic-button__spinner" aria-hidden="true" /> : <MicIcon muted={voice.muted} />}
+        {busy ? (
+          <span className="mic-button__spinner" aria-hidden="true" />
+        ) : (
+          <MicIcon muted={voice.muted} />
+        )}
       </button>
 
-      {joined && voice.needsAudioStart ? (
-        <button type="button" className="mic-control__action" onClick={onStartAudio}>
-          音声を有効にする
-        </button>
-      ) : null}
+      {showPopover ? (
+        <div className="mic-control__popover">
+          {showAudioAction ? (
+            <button type="button" className="mic-control__action" onClick={onStartAudio}>
+              音声を有効にする
+            </button>
+          ) : null}
 
-      {joined && hasVoiceError && !connected ? (
-        <div className="mic-control__error" role="alert">
-          <span>音声に接続できません</span>
-          <button type="button" className="mic-control__action" onClick={onRetryVoice}>
-            再試行
-          </button>
+          {unavailable ? (
+            <div className="mic-control__error" role="alert">
+              <span>音声に接続できません</span>
+              <button type="button" className="mic-control__action" onClick={onRetryVoice}>
+                再試行
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
