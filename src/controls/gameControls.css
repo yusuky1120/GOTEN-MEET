@@ -1,0 +1,77 @@
+.game-controls {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.game-controls__mic {
+  position: relative;
+  z-index: 2;
+}
+
+.game-controls .mic-control {
+  position: relative;
+  max-width: none;
+}
+
+.game-controls .mic-button,
+.game-controls .game-help-button {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+}
+
+.game-controls .mic-control__popover {
+  position: absolute;
+  left: calc(100% + 10px);
+  bottom: 0;
+  z-index: 4;
+  width: max-content;
+  max-width: min(240px, calc(100vw - 92px));
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 10px;
+  background: rgba(21, 24, 19, .96);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
+}
+
+.game-controls .mic-control__error {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.game-controls .game-help-popover {
+  position: absolute;
+  left: 0;
+  bottom: 108px;
+  z-index: 3;
+}
+
+@media (max-width: 700px) {
+  .game-controls {
+    left: 12px;
+    bottom: 12px;
+    gap: 8px;
+  }
+
+  .game-controls .mic-button,
+  .game-controls .game-help-button {
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
+  }
+
+  .game-controls .game-help-popover {
+    bottom: 100px;
+  }
+
+  .game-controls .mic-control__popover {
+    left: calc(100% + 8px);
+    max-width: calc(100vw - 78px);
+  }
+}
