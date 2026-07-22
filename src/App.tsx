@@ -4,8 +4,13 @@ import HouseChatPanel from './chat/HouseChatPanel';
 import GameHelpButton from './controls/GameHelpButton';
 import GameHelpPopover from './controls/GameHelpPopover';
 import MicrophoneButton from './controls/MicrophoneButton';
+import './controls/gameControls.css';
 import { createGameConfig } from './game/houseGame2';
 import JoinOverlay from './onboarding/JoinOverlay';
+import {
+  didPresenceDisconnect,
+  shouldShowJoinOverlay,
+} from './onboarding/joinValidation';
 import { useRealtimeSession } from './realtime/useRealtimeSession';
 
 const MAP_LABELS = new Set(['キッチン', '廊下', 'リビング', '作業部屋', '玄関']);
@@ -15,12 +20,34 @@ const HELP_PANEL_ID = 'game-help-panel';
 
 export default function App() {
   const gameRootRef = useRef<HTMLDivElement>(null);
+  const wasPresenceConnectedRef = useRef(false);
+  const presenceCleanupInFlightRef = useRef(false);
   const [roomName, setRoomName] = useState('玄関');
   const [helpOpen, setHelpOpen] = useState(false);
   const closeHelp = useCallback(() => setHelpOpen(false), []);
   const toggleHelp = useCallback(() => setHelpOpen((open) => !open), []);
 
   const session = useRealtimeSession({ currentMapRoom: roomName });
+  const joinOverlayOpen = shouldShowJoinOverlay({
+    joining: session.joining,
+    presenceConnected: session.joined,
+  });
+
+  useEffect(() => {
+    const connected = session.joined;
+    const disconnectedUnexpectedly = didPresenceDisconnect({
+      wasConnected: wasPresenceConnectedRef.current,
+      connected,
+    });
+    wasPresenceConnectedRef.current = connected;
+
+    if (!disconnectedUnexpectedly || presenceCleanupInFlightRef.current) return;
+
+    presenceCleanupInFlightRef.current = true;
+    void session.leave().finally(() => {
+      presenceCleanupInFlightRef.current = false;
+    });
+  }, [session.joined, session.leave]);
 
   useEffect(() => {
     if (!gameRootRef.current) return;
@@ -128,20 +155,6 @@ export default function App() {
           <h1>GOTEN MEET</h1>
         </div>
         <div className="topbar__trailing">
-          <MicrophoneButton
-            joined={session.joined}
-            voice={session.voice}
-            voiceError={session.voiceError}
-            onToggleMute={() => {
-              void session.toggleMute();
-            }}
-            onRetryVoice={() => {
-              void session.retryVoice();
-            }}
-            onStartAudio={() => {
-              void session.startAudio();
-            }}
-          />
           <div className="status-card">
             <span>現在地</span>
             <strong>{roomName}</strong>
@@ -151,7 +164,23 @@ export default function App() {
 
       <section className="game-panel">
         <div ref={gameRootRef} className="game-root" />
-        <div className="game-help">
+        <div className="game-controls">
+          <div className="game-controls__mic">
+            <MicrophoneButton
+              joined={session.joined}
+              voice={session.voice}
+              voiceError={session.voiceError}
+              onToggleMute={() => {
+                void session.toggleMute();
+              }}
+              onRetryVoice={() => {
+                void session.retryVoice();
+              }}
+              onStartAudio={() => {
+                void session.startAudio();
+              }}
+            />
+          </div>
           <GameHelpPopover open={helpOpen} panelId={HELP_PANEL_ID} onClose={closeHelp} />
           <GameHelpButton open={helpOpen} panelId={HELP_PANEL_ID} onToggle={toggleHelp} />
         </div>
@@ -160,7 +189,7 @@ export default function App() {
       <div ref={session.audioContainerRef} className="voice-audio-container" aria-hidden="true" />
 
       <JoinOverlay
-        open={!session.joined}
+        open={joinOverlayOpen}
         joining={session.joining}
         error={session.joinError}
         onJoin={(profile) => {
