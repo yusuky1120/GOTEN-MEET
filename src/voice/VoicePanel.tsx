@@ -1,4 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import HouseChatPanel from '../chat/HouseChatPanel';
+import type { HouseChatMessage } from '../chat/chatTypes';
+import {
+  appendChatMessage,
+  isValidIncomingChatPayload,
+  normalizeChatSentAt,
+  sanitizeChatDisplayName,
+  validateOutgoingChatText,
+} from '../chat/chatValidation';
 import {
   dispatchLocalPlayerClothing,
   LOCAL_PLAYER_POSITION_EVENT,
@@ -79,6 +88,9 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
   const lastMapRoomRef = useRef<string | null>(null);
   const lastVoiceRoomRef = useRef<string | null>(null);
   const lastLocalPositionRef = useRef<LocalPlayerPositionDetail | null>(null);
+  const chatSeenIdsRef = useRef(new Set<string>());
+  const chatSendInFlightRef = useRef(false);
+  const wasPresenceConnectedRef = useRef(false);
 
   const [participantName, setParticipantName] = useState('');
   const [syncWithMap, setSyncWithMap] = useState(true);
@@ -87,9 +99,19 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
   const [voice, setVoice] = useState<VoiceSessionSnapshot>(INITIAL_VOICE);
   const [localError, setLocalError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [chatMessages, setChatMessages] = useState<HouseChatMessage[]>([]);
+  const [chatSending, setChatSending] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
 
   const mappedLiveKitRoom = toLiveKitRoomName(currentMapRoom);
   const effectiveRoomName = syncWithMap ? (mappedLiveKitRoom ?? '') : manualRoomName;
+
+  function enqueueChatMessage(message: HouseChatMessage): void {
+    const seenIds = chatSeenIdsRef.current;
+    if (seenIds.has(message.id)) return;
+    seenIds.add(message.id);
+    setChatMessages((previous) => appendChatMessage(previous, message));
+  }
 
   useEffect(() => {
     mountedRef.current = true;
@@ -103,6 +125,28 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
     });
     const unsubVoice = voiceSession.subscribe((next) => {
       if (mountedRef.current) setVoice(next);
+    });
+    const unsubChat = presenceSession.subscribeChat((payload) => {
+      if (!mountedRef.current) return;
+      if (!isValidIncomingChatPayload(payload)) return;
+      const validated = validateOutgoingChatText(payload.text);
+      if (!validated.ok) return;
+
+      const localIdentity = presenceSession.getIdentity();
+      const message: HouseChatMessage = {
+        id: payload.id,
+        participantIdentity: payload.participantIdentity,
+        participantName: sanitizeChatDisplayName(
+          payload.participantName,
+          payload.participantIdentity,
+        ),
+        text: validated.text,
+        sentAt: normalizeChatSentAt(payload.sentAt),
+        own: Boolean(localIdentity && payload.participantIdentity === localIdentity),
+      };
+
+      // Dedup + seenIds update happen outside the React state updater.
+      enqueueChatMessage(message);
     });
 
     const onLocalPosition = (event: Event) => {
@@ -151,14 +195,29 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
       window.removeEventListener(REMOTE_PLAYER_REMOVE_EVENT, onRemoteRemove);
       unsubPresence();
       unsubVoice();
+      unsubChat();
       presenceSession.dispose();
       voiceSession.dispose();
       presenceRef.current = null;
       voiceRef.current = null;
       sessionIdentityRef.current = null;
+      chatSeenIdsRef.current.clear();
       dispatchLocalPlayerClothing({ clothingVariant: 0 });
     };
   }, []);
+
+  // Clear realtime-only chat history when Presence disconnects.
+  useEffect(() => {
+    const connected = presence.status === 'connected';
+    if (wasPresenceConnectedRef.current && !connected) {
+      chatSeenIdsRef.current.clear();
+      chatSendInFlightRef.current = false;
+      setChatMessages([]);
+      setChatSending(false);
+      setChatError(null);
+    }
+    wasPresenceConnectedRef.current = connected;
+  }, [presence.status]);
 
   // Keep mapRoomName on presence when the local map room changes.
   useEffect(() => {
@@ -411,8 +470,67 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
     }
   }
 
+  async function handleSendChat(raw: string): Promise<boolean> {
+    if (chatSendInFlightRef.current) return false;
+    const presenceSession = presenceRef.current;
+    if (!presenceSession || presenceSession.getSnapshot().status !== 'connected') {
+      setChatError('Presenceに接続するとチャットできます');
+      return false;
+    }
+
+    const validated = validateOutgoingChatText(raw);
+    if (!validated.ok) {
+      setChatError(validated.message);
+      return false;
+    }
+
+    const identity = presenceSession.getIdentity();
+    if (!identity) {
+      setChatError('参加者情報がありません。再接続してください。');
+      return false;
+    }
+
+    chatSendInFlightRef.current = true;
+    setChatSending(true);
+    setChatError(null);
+
+    try {
+      const { id, sentAt } = await presenceSession.sendChatText(validated.text);
+      if (!mountedRef.current) return true;
+
+      const message: HouseChatMessage = {
+        id,
+        participantIdentity: identity,
+        participantName: sanitizeChatDisplayName(participantName, identity),
+        text: validated.text,
+        sentAt: normalizeChatSentAt(sentAt),
+        own: true,
+      };
+      enqueueChatMessage(message);
+      return true;
+    } catch {
+      if (mountedRef.current) {
+        setChatError('メッセージの送信に失敗しました。');
+      }
+      return false;
+    } finally {
+      chatSendInFlightRef.current = false;
+      if (mountedRef.current) setChatSending(false);
+    }
+  }
+
   return (
-    <aside className="voice-panel" aria-label="Voice chat">
+    <div className="realtime-panel-stack">
+      <HouseChatPanel
+        presenceConnected={presenceConnected}
+        messages={chatMessages}
+        sending={chatSending}
+        error={chatError}
+        onClearError={() => setChatError(null)}
+        onSend={handleSendChat}
+      />
+
+      <aside className="voice-panel" aria-label="Voice chat">
       <div className="voice-panel__header">
         <h2>接続（Presence + Voice）</h2>
         <p>
@@ -596,6 +714,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
 
       <div ref={audioContainerRef} className="voice-audio-container" aria-hidden="true" />
     </aside>
+    </div>
   );
 }
 
