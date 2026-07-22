@@ -10,6 +10,7 @@ import {
   dispatchRemotePlayersClear,
 } from '../game/gamePositionEvents';
 import { HOUSE_CHAT_TOPIC, HOUSE_CHAT_VERSION } from '../chat/chatConstants';
+import { readBoundedHouseChatText } from '../chat/chatStream';
 import type { IncomingHouseChatPayload } from '../chat/chatTypes';
 import {
   PLAYER_PRESENCE_TOPIC,
@@ -116,7 +117,8 @@ export class PresenceSession {
     const generation = this.generation;
     void (async () => {
       try {
-        const text = await reader.readAll();
+        const text = await readBoundedHouseChatText(reader);
+        if (text === null) return;
         if (generation !== this.generation) return;
         if (!this.room || this.status !== 'connected') return;
 
