@@ -17,9 +17,13 @@ import {
   VOLUME_SMOOTHING_INTERVAL_MS,
 } from '../audio/proximityAudioConstants';
 import { calculateProximityVolume, clamp01 } from '../audio/proximityVolume';
+import {
+  classifiedConnectionError,
+  classifyFetchNetworkError,
+  classifyHttpApiFailure,
+} from '../realtime/connectionErrors';
 import type {
   ParticipantSummary,
-  TokenErrorResponse,
   TokenResponse,
   VoiceSessionListener,
   VoiceSessionSnapshot,
@@ -44,15 +48,6 @@ function isTokenResponse(value: unknown): value is TokenResponse {
     typeof record.participantToken === 'string' &&
     typeof record.participantIdentity === 'string'
   );
-}
-
-function readErrorMessage(value: unknown, fallback: string): string {
-  if (value === null || typeof value !== 'object') return fallback;
-  const record = value as TokenErrorResponse;
-  if (record.error && typeof record.error.message === 'string') {
-    return record.error.message;
-  }
-  return fallback;
 }
 
 export class VoiceSession {
@@ -580,13 +575,18 @@ export class VoiceSession {
     participantName: string,
     participantIdentity: string,
   ): Promise<TokenResponse> {
-    const response = await fetch('/api/livekit/voice-token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ roomName, participantName, participantIdentity }),
-    });
+    let response: Response;
+    try {
+      response = await fetch('/api/livekit/voice-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ roomName, participantName, participantIdentity }),
+      });
+    } catch (error) {
+      throw classifiedConnectionError(classifyFetchNetworkError(error, 'voice-token'));
+    }
 
     let payload: unknown = null;
     try {
@@ -596,11 +596,13 @@ export class VoiceSession {
     }
 
     if (!response.ok) {
-      throw new Error(readErrorMessage(payload, `Token request failed (${response.status})`));
+      throw classifiedConnectionError(
+        classifyHttpApiFailure(response.status, payload, 'voice-token'),
+      );
     }
 
     if (!isTokenResponse(payload) || !payload.participantToken || !payload.serverUrl) {
-      throw new Error('Token response was incomplete');
+      throw classifiedConnectionError('Voiceトークンの応答が不完全です');
     }
 
     return payload;
