@@ -52,6 +52,15 @@ brew install livekit
 
 ## 起動
 
+```text
+Terminal 1: livekit-server --dev
+Terminal 2: npm run dev:app
+```
+
+`npm run dev:app` はトークンAPI（`:8787`）と Vite（`:5173`）をまとめて起動します。LiveKit Server だけは別ターミナルで起動してください。どちらかが終了すると、もう一方の子プロセスも終了します。
+
+従来どおり3ターミナルでも起動できます。
+
 ```bash
 livekit-server --dev
 ```
@@ -91,13 +100,40 @@ npm run dev
 
 Vite の `base` は `/GOTEN-MEET/` です。ターミナルに表示された URL（多くの場合 `http://localhost:5173/GOTEN-MEET/`）を開いてください。ルートの `http://localhost:5173/` だけでは正しく動かないことがあります。
 
-## 起動する3プロセス
+## 起動するプロセス
+
+```text
+Terminal 1: livekit-server --dev
+Terminal 2: npm run dev:app
+```
+
+または従来どおり:
 
 ```text
 Terminal 1: livekit-server --dev
 Terminal 2: cd server && npm run dev
 Terminal 3: npm run dev
 ```
+
+### Session request failed / トークンAPIエラー
+
+接続時にセッションエラーが出た場合は次を確認してください。
+
+1. LiveKit Server（`livekit-server --dev`）が起動しているか
+2. トークンAPI（`cd server && npm run dev`、または `npm run dev:app`）が `:8787` で起動しているか
+3. Vite が起動しており、`/api` が `:8787` へプロキシされているか
+4. `server/.env` の LiveKit URL / Key / Secret がローカル開発用になっているか
+
+ローカルでトークンAPIが止まっている場合、UI は「トークンAPI（localhost:8787）に接続できません」と案内します。曖昧な `Session request failed (500)` だけにはしません。
+
+### ローカル開発と GitHub Pages
+
+- **ローカル:** Vite + トークンAPI（`:8787`）+ LiveKit Server の3プロセスが必要です（`npm run dev:app` で API と Vite を同時起動可）
+- **GitHub Pages:** 静的フロントのみが公開されます。`/api/livekit/*` や LiveKit は Pages には含まれないため、バックエンド API と LiveKit は別途デプロイ／公開が必要です
+
+### remote player の表示
+
+remote player は Presence Room の参加状態を正とします。位置パケットが一時的に途切れてもマップから消しません。Voice Room の切り替えでも消しません。Presence から退出／切断したときだけ消えます。再接続して Presence snapshot を受け取ると再表示されます。
 
 ## 動作確認
 
