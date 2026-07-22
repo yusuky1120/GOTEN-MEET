@@ -3,7 +3,6 @@ import { DISTANCE_UPDATE_INTERVAL_MS } from '../audio/proximityAudioConstants';
 import {
   MAX_DISPLAY_NAME_LENGTH,
   REMOTE_INTERPOLATION_SPEED,
-  REMOTE_PLAYER_TIMEOUT_MS,
   REMOTE_TELEPORT_DISTANCE,
 } from '../realtime/playerPositionConstants';
 import { sanitizeDisplayName } from '../realtime/playerPositionCodec';
@@ -34,7 +33,6 @@ type RemotePlayerView = {
   mapRoomName: string | null;
   voiceRoomName: string | null;
   clothingVariant: number;
-  lastUpdateAt: number;
   stepping: boolean;
   lastStepAt: number;
   lastEmittedDistance: number;
@@ -80,12 +78,9 @@ export class RemotePlayersManager {
   update(deltaMs: number, timeMs: number): void {
     const alpha = 1 - Math.exp((-REMOTE_INTERPOLATION_SPEED * deltaMs) / 1000);
 
-    for (const [identity, view] of this.views) {
-      if (timeMs - view.lastUpdateAt > REMOTE_PLAYER_TIMEOUT_MS) {
-        this.remove(identity);
-        continue;
-      }
-
+    // Visibility is owned by Presence Room membership (PresenceSession).
+    // Do not remove remotes here based on packet age or wall-clock vs Phaser time.
+    for (const view of this.views.values()) {
       const dx = view.targetX - view.sprite.x;
       const dy = view.targetY - view.sprite.y;
       const distance = Math.hypot(dx, dy);
@@ -198,7 +193,6 @@ export class RemotePlayersManager {
         mapRoomName: position.mapRoomName,
         voiceRoomName: position.voiceRoomName,
         clothingVariant,
-        lastUpdateAt: position.sentAt || performance.now(),
         stepping: false,
         lastStepAt: 0,
         lastEmittedDistance: Number.NaN,
@@ -216,7 +210,6 @@ export class RemotePlayersManager {
     existing.moving = position.moving;
     existing.mapRoomName = position.mapRoomName;
     existing.voiceRoomName = position.voiceRoomName;
-    existing.lastUpdateAt = position.sentAt || performance.now();
     existing.nameLabel.setText(labelText);
     existing.roomLabel.setText(position.mapRoomName ?? '');
 
