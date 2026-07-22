@@ -13,7 +13,9 @@
     "check:presence": "npx tsx scripts/check-player-presence.ts",
     "check:connection-errors": "npx tsx scripts/check-connection-errors.ts",
     "check:remote-presence-policy": "npx tsx scripts/check-remote-presence-policy.ts",
-    "check": "npm run check:proximity && npm run check:clothing && npm run check:presence && npm run check:connection-errors && npm run check:remote-presence-policy"
+    "check:house-chat": "npx tsx scripts/check-house-chat.ts",
+    "check:room-mapping": "npx tsx scripts/check-room-mapping.ts",
+    "check": "npm run check:proximity && npm run check:clothing && npm run check:presence && npm run check:connection-errors && npm run check:remote-presence-policy && npm run check:house-chat && npm run check:room-mapping"
   },
   "dependencies": {
     "livekit-client": "^2.20.2",
