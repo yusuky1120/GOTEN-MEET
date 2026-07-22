@@ -1,21 +1,52 @@
 import {
   HOUSE_CHAT_VERSION,
   MAX_CHAT_DISPLAY_NAME_LENGTH,
+  MAX_CHAT_MESSAGE_BYTES,
   MAX_CHAT_MESSAGE_LENGTH,
   MAX_CHAT_MESSAGES,
 } from './chatConstants';
 import type { HouseChatMessage, IncomingHouseChatPayload } from './chatTypes';
 
 const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
+const textEncoder = new TextEncoder();
 
 /** Count visible characters by Unicode code points (not UTF-16 code units). */
 export function countChatCharacters(text: string): number {
   return Array.from(text).length;
 }
 
+export function utf8ByteLength(text: string): number {
+  return textEncoder.encode(text).byteLength;
+}
+
 /** Collapse newlines/whitespace runs, then trim. */
 export function normalizeChatText(raw: string): string {
   return raw.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Reject streams whose declared byte size already exceeds the chat limit.
+ * Unknown / non-finite sizes are not rejected here (bounded during read).
+ */
+export function isIncomingChatStreamTooLarge(size: number | undefined): boolean {
+  if (typeof size !== 'number' || !Number.isFinite(size) || size < 0) {
+    return false;
+  }
+  return size > MAX_CHAT_MESSAGE_BYTES;
+}
+
+export function normalizeChatSentAt(sentAt: number, fallbackNow = Date.now()): number {
+  if (!Number.isFinite(sentAt) || sentAt <= 0) {
+    return fallbackNow;
+  }
+  return sentAt;
+}
+
+export function compareChatMessages(a: HouseChatMessage, b: HouseChatMessage): number {
+  if (a.sentAt !== b.sentAt) return a.sentAt - b.sentAt;
+  if (a.id < b.id) return -1;
+  if (a.id > b.id) return 1;
+  return 0;
 }
 
 export type ChatValidationFailure = {
@@ -72,25 +103,29 @@ export function isValidIncomingChatPayload(payload: IncomingHouseChatPayload): b
   return validateOutgoingChatText(payload.text).ok;
 }
 
+/**
+ * Pure merge: does not mutate inputs or any external Set.
+ * Sorts by sentAt (then id) and keeps the newest MAX_CHAT_MESSAGES.
+ */
 export function appendChatMessage(
   messages: readonly HouseChatMessage[],
   next: HouseChatMessage,
-  seenIds: Set<string>,
-): { messages: HouseChatMessage[]; added: boolean } {
-  if (seenIds.has(next.id)) {
-    return { messages: [...messages], added: false };
+): HouseChatMessage[] {
+  const normalized: HouseChatMessage = {
+    ...next,
+    sentAt: normalizeChatSentAt(next.sentAt),
+  };
+
+  if (messages.some((message) => message.id === normalized.id)) {
+    return messages.slice();
   }
 
-  seenIds.add(next.id);
-  const merged = [...messages, next];
+  const merged = [...messages, normalized];
+  merged.sort(compareChatMessages);
+
   if (merged.length <= MAX_CHAT_MESSAGES) {
-    return { messages: merged, added: true };
+    return merged;
   }
 
-  const overflow = merged.length - MAX_CHAT_MESSAGES;
-  const trimmed = merged.slice(overflow);
-  for (const removed of merged.slice(0, overflow)) {
-    seenIds.delete(removed.id);
-  }
-  return { messages: trimmed, added: true };
+  return merged.slice(merged.length - MAX_CHAT_MESSAGES);
 }

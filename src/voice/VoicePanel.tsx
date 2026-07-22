@@ -4,6 +4,7 @@ import type { HouseChatMessage } from '../chat/chatTypes';
 import {
   appendChatMessage,
   isValidIncomingChatPayload,
+  normalizeChatSentAt,
   sanitizeChatDisplayName,
   validateOutgoingChatText,
 } from '../chat/chatValidation';
@@ -105,6 +106,13 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
   const mappedLiveKitRoom = toLiveKitRoomName(currentMapRoom);
   const effectiveRoomName = syncWithMap ? (mappedLiveKitRoom ?? '') : manualRoomName;
 
+  function enqueueChatMessage(message: HouseChatMessage): void {
+    const seenIds = chatSeenIdsRef.current;
+    if (seenIds.has(message.id)) return;
+    seenIds.add(message.id);
+    setChatMessages((previous) => appendChatMessage(previous, message));
+  }
+
   useEffect(() => {
     mountedRef.current = true;
     const presenceSession = new PresenceSession();
@@ -133,14 +141,12 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
           payload.participantIdentity,
         ),
         text: validated.text,
-        sentAt: payload.sentAt || Date.now(),
+        sentAt: normalizeChatSentAt(payload.sentAt),
         own: Boolean(localIdentity && payload.participantIdentity === localIdentity),
       };
 
-      setChatMessages((prev) => {
-        const result = appendChatMessage(prev, message, chatSeenIdsRef.current);
-        return result.messages;
-      });
+      // Dedup + seenIds update happen outside the React state updater.
+      enqueueChatMessage(message);
     });
 
     const onLocalPosition = (event: Event) => {
@@ -497,13 +503,10 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         participantIdentity: identity,
         participantName: sanitizeChatDisplayName(participantName, identity),
         text: validated.text,
-        sentAt: sentAt || Date.now(),
+        sentAt: normalizeChatSentAt(sentAt),
         own: true,
       };
-      setChatMessages((prev) => {
-        const result = appendChatMessage(prev, message, chatSeenIdsRef.current);
-        return result.messages;
-      });
+      enqueueChatMessage(message);
       return true;
     } catch {
       if (mountedRef.current) {
