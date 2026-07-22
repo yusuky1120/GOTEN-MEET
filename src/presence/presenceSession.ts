@@ -106,6 +106,7 @@ export class PresenceSession {
       sentAt: message.sentAt,
       mapRoomName: message.mapRoomName,
       voiceRoomName: message.voiceRoomName,
+      avatarType: message.avatarType,
     });
 
     if (!wasKnown) {

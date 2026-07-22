@@ -1,12 +1,20 @@
+import type { AvatarType } from '../avatar/avatarTypes';
 import type { LocalPlayerPosition, RemotePlayerPosition } from '../realtime/playerPositionTypes';
 
 export const LOCAL_PLAYER_POSITION_EVENT = 'goten:local-player-position';
+export const LOCAL_PLAYER_AVATAR_EVENT = 'goten:local-player-avatar';
+/** @deprecated Prefer LOCAL_PLAYER_AVATAR_EVENT */
 export const LOCAL_PLAYER_CLOTHING_EVENT = 'goten:local-player-clothing';
 export const REMOTE_PLAYER_POSITION_EVENT = 'goten:remote-player-position';
 export const REMOTE_PLAYER_REMOVE_EVENT = 'goten:remote-player-remove';
 export const REMOTE_PLAYERS_CLEAR_EVENT = 'goten:remote-players-clear';
 
 export type LocalPlayerPositionDetail = LocalPlayerPosition;
+
+export type LocalPlayerAvatarDetail = {
+  avatarType: AvatarType;
+  clothingVariant: number;
+};
 
 export type LocalPlayerClothingDetail = {
   clothingVariant: number;
@@ -21,6 +29,12 @@ export type RemotePlayerRemoveDetail = {
 export function dispatchLocalPlayerPosition(detail: LocalPlayerPositionDetail): void {
   window.dispatchEvent(
     new CustomEvent<LocalPlayerPositionDetail>(LOCAL_PLAYER_POSITION_EVENT, { detail }),
+  );
+}
+
+export function dispatchLocalPlayerAvatar(detail: LocalPlayerAvatarDetail): void {
+  window.dispatchEvent(
+    new CustomEvent<LocalPlayerAvatarDetail>(LOCAL_PLAYER_AVATAR_EVENT, { detail }),
   );
 }
 

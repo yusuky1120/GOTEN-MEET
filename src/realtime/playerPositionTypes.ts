@@ -1,3 +1,5 @@
+import type { AvatarType } from '../avatar/avatarTypes';
+
 export type PlayerDirection = 'up' | 'down' | 'left' | 'right';
 
 export const PLAYER_DIRECTIONS: readonly PlayerDirection[] = [
@@ -25,4 +27,5 @@ export type RemotePlayerPosition = {
   sentAt: number;
   mapRoomName: string | null;
   voiceRoomName: string | null;
+  avatarType: AvatarType;
 };

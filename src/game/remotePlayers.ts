@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { DEFAULT_AVATAR_TYPE, type AvatarType } from '../avatar/avatarTypes';
 import { DISTANCE_UPDATE_INTERVAL_MS } from '../audio/proximityAudioConstants';
 import {
   MAX_DISPLAY_NAME_LENGTH,
@@ -7,7 +8,7 @@ import {
 } from '../realtime/playerPositionConstants';
 import { sanitizeDisplayName } from '../realtime/playerPositionCodec';
 import type { PlayerDirection, RemotePlayerPosition } from '../realtime/playerPositionTypes';
-import { ensureClothingVariantTextures } from './avatarTextures';
+import { avatarTextureKey, ensureAvatarVariantTextures } from './avatarTextures';
 import {
   REMOTE_PLAYER_POSITION_EVENT,
   REMOTE_PLAYER_REMOVE_EVENT,
@@ -15,7 +16,7 @@ import {
   type RemotePlayerPositionDetail,
   type RemotePlayerRemoveDetail,
 } from './gamePositionEvents';
-import { clothingTextureKey, getPlayerClothingVariant } from './playerClothing';
+import { getPlayerClothingVariant } from './playerClothing';
 import { dispatchRemotePlayerDistance } from './playerDistanceEvents';
 
 const REMOTE_DEPTH = 40_000;
@@ -33,6 +34,7 @@ type RemotePlayerView = {
   mapRoomName: string | null;
   voiceRoomName: string | null;
   clothingVariant: number;
+  avatarType: AvatarType;
   stepping: boolean;
   lastStepAt: number;
   lastEmittedDistance: number;
@@ -145,7 +147,8 @@ export class RemotePlayersManager {
       position.participantIdentity,
     ).slice(0, MAX_DISPLAY_NAME_LENGTH);
     const clothingVariant = getPlayerClothingVariant(position.participantIdentity);
-    ensureClothingVariantTextures(this.scene, clothingVariant);
+    const avatarType = position.avatarType || DEFAULT_AVATAR_TYPE;
+    ensureAvatarVariantTextures(this.scene, avatarType, clothingVariant);
 
     if (!existing) {
       const shadow = this.scene.add.ellipse(
@@ -159,7 +162,7 @@ export class RemotePlayersManager {
       const sprite = this.scene.add.sprite(
         position.x,
         position.y,
-        clothingTextureKey('idle', clothingVariant),
+        avatarTextureKey(avatarType, 'idle', clothingVariant),
       );
       // Do NOT setTint — clothing color comes from palette-swapped textures.
       const nameLabel = this.scene.add
@@ -193,6 +196,7 @@ export class RemotePlayersManager {
         mapRoomName: position.mapRoomName,
         voiceRoomName: position.voiceRoomName,
         clothingVariant,
+        avatarType,
         stepping: false,
         lastStepAt: 0,
         lastEmittedDistance: Number.NaN,
@@ -210,6 +214,8 @@ export class RemotePlayersManager {
     existing.moving = position.moving;
     existing.mapRoomName = position.mapRoomName;
     existing.voiceRoomName = position.voiceRoomName;
+    existing.clothingVariant = clothingVariant;
+    existing.avatarType = avatarType;
     existing.nameLabel.setText(labelText);
     existing.roomLabel.setText(position.mapRoomName ?? '');
 
@@ -237,11 +243,13 @@ export class RemotePlayersManager {
         view.lastStepAt = timeMs;
       }
       view.sprite.setTexture(
-        clothingTextureKey(view.stepping ? 'step' : 'idle', view.clothingVariant),
+        avatarTextureKey(view.avatarType, view.stepping ? 'step' : 'idle', view.clothingVariant),
       );
     } else {
       view.stepping = false;
-      view.sprite.setTexture(clothingTextureKey('idle', view.clothingVariant));
+      view.sprite.setTexture(
+        avatarTextureKey(view.avatarType, 'idle', view.clothingVariant),
+      );
     }
 
     view.shadow

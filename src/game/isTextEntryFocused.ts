@@ -13,3 +13,11 @@ export function isTextEntryFocused(): boolean {
     element.getAttribute('role') === 'textbox'
   );
 }
+
+/** True when overlays (join modal, help) or text fields should freeze game controls. */
+export function isGameInputBlocked(): boolean {
+  if (document.querySelector('[data-game-input-lock="true"]')) {
+    return true;
+  }
+  return isTextEntryFocused();
+}

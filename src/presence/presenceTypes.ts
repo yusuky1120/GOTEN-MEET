@@ -1,3 +1,4 @@
+import type { AvatarType } from '../avatar/avatarTypes';
 import type { PlayerDirection } from '../realtime/playerPositionTypes';
 
 export type PresenceConnectionStatus =
@@ -6,7 +7,7 @@ export type PresenceConnectionStatus =
   | 'connected'
   | 'error';
 
-export type PlayerPresenceMessage = {
+export type PlayerPresenceMessageV2 = {
   type: 'player-presence';
   version: 2;
   x: number;
@@ -19,6 +20,23 @@ export type PlayerPresenceMessage = {
   sentAt: number;
 };
 
+export type PlayerPresenceMessageV3 = {
+  type: 'player-presence';
+  version: 3;
+  x: number;
+  y: number;
+  direction: PlayerDirection;
+  moving: boolean;
+  mapRoomName: string | null;
+  voiceRoomName: string | null;
+  avatarType: AvatarType;
+  sequence: number;
+  sentAt: number;
+};
+
+/** Normalized presence message used by the app after decode. */
+export type PlayerPresenceMessage = PlayerPresenceMessageV3;
+
 export type LocalPresenceState = {
   x: number;
   y: number;
@@ -26,6 +44,7 @@ export type LocalPresenceState = {
   moving: boolean;
   mapRoomName: string | null;
   voiceRoomName: string | null;
+  avatarType: AvatarType;
 };
 
 export type PresenceSessionSnapshot = {

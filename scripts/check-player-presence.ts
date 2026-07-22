@@ -2,6 +2,7 @@
  * Lightweight checks for presence payload codec (no test framework).
  * Run: npx tsx scripts/check-player-presence.ts
  */
+import { DEFAULT_AVATAR_TYPE } from '../src/avatar/avatarTypes.ts';
 import { PLAYER_PRESENCE_TOPIC } from '../src/presence/presenceConstants.ts';
 import {
   decodePlayerPresencePayload,
@@ -20,12 +21,14 @@ const state: LocalPresenceState = {
   moving: true,
   mapRoomName: 'リビング',
   voiceRoomName: 'kitchen',
+  avatarType: DEFAULT_AVATAR_TYPE,
 };
 
 const encoded = encodePlayerPresenceMessage(state, { sequence: 3, sentAt: 1_700_000_000_000 });
 const decoded = decodePlayerPresencePayload(encoded, PLAYER_PRESENCE_TOPIC);
 assert(decoded !== null, 'valid payload decodes');
-assert(decoded!.version === 2, 'version 2');
+assert(decoded!.version === 3, 'version 3');
+assert(decoded!.avatarType === DEFAULT_AVATAR_TYPE, 'avatarType preserved');
 assert(decoded!.voiceRoomName === 'kitchen', 'voiceRoomName preserved');
 assert(decoded!.mapRoomName === 'リビング', 'mapRoomName preserved');
 assert(decoded!.sequence === 3, 'sequence preserved');
@@ -47,13 +50,14 @@ assert(decodePlayerPresencePayload(encoded, 'goten.player-position.v1') === null
 const badCoords = new TextEncoder().encode(
   JSON.stringify({
     type: 'player-presence',
-    version: 2,
+    version: 3,
     x: 999_999,
     y: 0,
     direction: 'up',
     moving: false,
     mapRoomName: null,
     voiceRoomName: null,
+    avatarType: 'male',
     sequence: 1,
     sentAt: 1,
   }),

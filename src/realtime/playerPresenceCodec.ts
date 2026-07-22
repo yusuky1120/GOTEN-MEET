@@ -1,3 +1,4 @@
+import { DEFAULT_AVATAR_TYPE, isAvatarType } from '../avatar/avatarTypes';
 import {
   MAX_ABS_COORDINATE,
   MAX_POSITION_PAYLOAD_BYTES,
@@ -27,13 +28,14 @@ export function encodePlayerPresenceMessage(
 ): Uint8Array {
   const message: PlayerPresenceMessage = {
     type: 'player-presence',
-    version: 2,
+    version: 3,
     x: state.x,
     y: state.y,
     direction: state.direction,
     moving: state.moving,
     mapRoomName: state.mapRoomName,
     voiceRoomName: state.voiceRoomName,
+    avatarType: state.avatarType,
     sequence: meta.sequence,
     sentAt: meta.sentAt,
   };
@@ -65,7 +67,7 @@ export function decodePlayerPresencePayload(
 
   const record = parsed as Record<string, unknown>;
   if (record.type !== 'player-presence') return null;
-  if (record.version !== 2) return null;
+  if (record.version !== 2 && record.version !== 3) return null;
   if (typeof record.x !== 'number' || !Number.isFinite(record.x)) return null;
   if (typeof record.y !== 'number' || !Number.isFinite(record.y)) return null;
   if (Math.abs(record.x) > MAX_ABS_COORDINATE || Math.abs(record.y) > MAX_ABS_COORDINATE) {
@@ -84,15 +86,22 @@ export function decodePlayerPresencePayload(
   }
   if (typeof record.sentAt !== 'number' || !Number.isFinite(record.sentAt)) return null;
 
+  let avatarType = DEFAULT_AVATAR_TYPE;
+  if (record.version === 3) {
+    if (!isAvatarType(record.avatarType)) return null;
+    avatarType = record.avatarType;
+  }
+
   return {
     type: 'player-presence',
-    version: 2,
+    version: 3,
     x: record.x,
     y: record.y,
     direction: record.direction,
     moving: record.moving,
     mapRoomName: record.mapRoomName,
     voiceRoomName: record.voiceRoomName,
+    avatarType,
     sequence: record.sequence,
     sentAt: record.sentAt,
   };
@@ -102,6 +111,7 @@ export function toPresenceState(
   position: LocalPlayerPosition,
   mapRoomName: string | null,
   voiceRoomName: string | null,
+  avatarType = DEFAULT_AVATAR_TYPE,
 ): LocalPresenceState {
   return {
     x: position.x,
@@ -110,5 +120,6 @@ export function toPresenceState(
     moving: position.moving,
     mapRoomName,
     voiceRoomName,
+    avatarType,
   };
 }

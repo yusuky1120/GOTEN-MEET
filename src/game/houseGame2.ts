@@ -1,18 +1,25 @@
 import Phaser from 'phaser';
+import { DEFAULT_AVATAR_TYPE, type AvatarType } from '../avatar/avatarTypes';
 import {
   MIN_POSITION_DELTA,
   MOVING_POSITION_INTERVAL_MS,
   STATIONARY_HEARTBEAT_INTERVAL_MS,
 } from '../realtime/playerPositionConstants';
 import type { PlayerDirection } from '../realtime/playerPositionTypes';
-import { ensureAllClothingTextures, ensureDefaultAvatarTextures } from './avatarTextures';
+import {
+  avatarTextureKey,
+  ensureAllClothingTextures,
+  ensureAvatarVariantTextures,
+  ensureDefaultAvatarTextures,
+} from './avatarTextures';
 import {
   dispatchLocalPlayerPosition,
+  LOCAL_PLAYER_AVATAR_EVENT,
   LOCAL_PLAYER_CLOTHING_EVENT,
+  type LocalPlayerAvatarDetail,
   type LocalPlayerClothingDetail,
 } from './gamePositionEvents';
-import { isTextEntryFocused } from './isTextEntryFocused';
-import { clothingTextureKey } from './playerClothing';
+import { isGameInputBlocked } from './isTextEntryFocused';
 import { RemotePlayersManager } from './remotePlayers';
 
 type Zone = {
@@ -71,6 +78,7 @@ class HouseScene extends Phaser.Scene {
   private lastEmittedMoving = false;
   private lastLocalMoving = false;
   private clothingVariant = 0;
+  private avatarType: AvatarType = DEFAULT_AVATAR_TYPE;
 
   create() {
     this.cameras.main.setBackgroundColor('#252019');
@@ -114,6 +122,7 @@ class HouseScene extends Phaser.Scene {
     this.remotePlayers.bind();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.handleShutdown, this);
+    window.addEventListener(LOCAL_PLAYER_AVATAR_EVENT, this.onAvatarChange);
     window.addEventListener(LOCAL_PLAYER_CLOTHING_EVENT, this.onClothingChange);
 
     this.updateRoom();
@@ -123,10 +132,10 @@ class HouseScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.remotePlayers?.update(delta, time);
 
-    if (isTextEntryFocused()) {
+    if (isGameInputBlocked()) {
       this.player.setVelocity(0, 0);
       this.stepping = false;
-      this.player.setTexture(clothingTextureKey('idle', this.clothingVariant));
+      this.player.setTexture(this.textureKey(this.seated ? 'sit' : 'idle'));
       this.presentPlayer();
       this.updateRoom();
       this.emitLocalPosition(false, time);
@@ -176,13 +185,11 @@ class HouseScene extends Phaser.Scene {
 
     if (moving && time - this.lastStep > 170) {
       this.stepping = !this.stepping;
-      this.player.setTexture(
-        clothingTextureKey(this.stepping ? 'step' : 'idle', this.clothingVariant),
-      );
+      this.player.setTexture(this.textureKey(this.stepping ? 'step' : 'idle'));
       this.lastStep = time;
     } else if (!moving) {
       this.stepping = false;
-      this.player.setTexture(clothingTextureKey('idle', this.clothingVariant));
+      this.player.setTexture(this.textureKey('idle'));
     }
 
     this.updateSeatPrompt(time);
@@ -198,20 +205,36 @@ class HouseScene extends Phaser.Scene {
   }
 
   private handleShutdown = () => {
+    window.removeEventListener(LOCAL_PLAYER_AVATAR_EVENT, this.onAvatarChange);
     window.removeEventListener(LOCAL_PLAYER_CLOTHING_EVENT, this.onClothingChange);
     this.remotePlayers?.destroy();
     this.remotePlayers = null;
   };
 
-  private readonly onClothingChange = (event: Event) => {
-    const detail = (event as CustomEvent<LocalPlayerClothingDetail>).detail;
+  private readonly onAvatarChange = (event: Event) => {
+    const detail = (event as CustomEvent<LocalPlayerAvatarDetail>).detail;
+    this.avatarType = detail.avatarType;
     this.clothingVariant = detail.clothingVariant;
-    ensureAllClothingTextures(this);
+    ensureAvatarVariantTextures(this, this.avatarType, this.clothingVariant);
     const pose = this.seated ? 'sit' : this.stepping ? 'step' : 'idle';
-    this.player.setTexture(clothingTextureKey(pose, this.clothingVariant));
+    this.player.setTexture(this.textureKey(pose));
     if (this.facing === 'left') this.player.setFlipX(true);
     this.emitLocalPosition(this.lastLocalMoving, performance.now(), true);
   };
+
+  private readonly onClothingChange = (event: Event) => {
+    const detail = (event as CustomEvent<LocalPlayerClothingDetail>).detail;
+    this.clothingVariant = detail.clothingVariant;
+    ensureAvatarVariantTextures(this, this.avatarType, this.clothingVariant);
+    const pose = this.seated ? 'sit' : this.stepping ? 'step' : 'idle';
+    this.player.setTexture(this.textureKey(pose));
+    if (this.facing === 'left') this.player.setFlipX(true);
+    this.emitLocalPosition(this.lastLocalMoving, performance.now(), true);
+  };
+
+  private textureKey(pose: 'idle' | 'step' | 'sit'): string {
+    return avatarTextureKey(this.avatarType, pose, this.clothingVariant);
+  }
 
   private emitLocalPosition(moving: boolean, timeMs: number, force = false): void {
     const x = this.player.x;
@@ -300,7 +323,7 @@ class HouseScene extends Phaser.Scene {
 
     this.player
       .setPosition(seat.x, seat.y - 3)
-      .setTexture(clothingTextureKey('sit', this.clothingVariant))
+      .setTexture(this.textureKey('sit'))
       .setFlipX(seat.direction === 'left');
     this.facing = seat.direction;
     this.stepping = false;
@@ -319,7 +342,7 @@ class HouseScene extends Phaser.Scene {
 
     this.player
       .setPosition(seat.standX, seat.standY)
-      .setTexture(clothingTextureKey('idle', this.clothingVariant))
+      .setTexture(this.textureKey('idle'))
       .setFlipX(seat.direction === 'left');
     this.facing = seat.direction === 'left' || seat.direction === 'right' ? seat.direction : 'down';
 
@@ -794,7 +817,7 @@ class HouseScene extends Phaser.Scene {
     this.player = this.physics.add.sprite(
       x,
       y,
-      clothingTextureKey('idle', this.clothingVariant),
+      this.textureKey('idle'),
     );
     this.player.body!.setSize(22, 18);
     this.player.body!.setOffset(9, 34);
