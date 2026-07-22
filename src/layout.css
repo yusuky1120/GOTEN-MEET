@@ -1,0 +1,130 @@
+/*
+ * Desktop workspace layout.
+ *
+ * The original overlay placed both side panels on top of the full-width game
+ * canvas. These rules reserve equal left/right rails for the controls and chat,
+ * leaving the Phaser canvas in a dedicated center column.
+ */
+:root {
+  --goten-topbar-height: 96px;
+  --goten-side-gutter: clamp(18px, 2vw, 30px);
+  --goten-side-width: clamp(260px, 23vw, 360px);
+  --goten-side-gap: clamp(14px, 1.5vw, 24px);
+  --goten-panel-top-gap: clamp(18px, 2vw, 30px);
+  --goten-panel-bottom-gap: clamp(18px, 2vw, 30px);
+  --goten-side-rail: calc(
+    var(--goten-side-gutter) + var(--goten-side-width) + var(--goten-side-gap)
+  );
+}
+
+/* Reserve symmetrical rails so the cards no longer cover the map. */
+.game-panel {
+  inset:
+    var(--goten-topbar-height)
+    var(--goten-side-rail)
+    0;
+  border-right: 1px solid rgba(129, 145, 117, 0.2);
+  border-left: 1px solid rgba(129, 145, 117, 0.2);
+}
+
+.left-panel-stack,
+.house-chat {
+  top: calc(var(--goten-topbar-height) + var(--goten-panel-top-gap));
+  bottom: var(--goten-panel-bottom-gap);
+  width: var(--goten-side-width);
+  height: auto;
+  max-height: none;
+}
+
+.left-panel-stack {
+  left: var(--goten-side-gutter);
+  gap: 10px;
+}
+
+.house-chat {
+  right: var(--goten-side-gutter);
+}
+
+/* The connection card takes the remaining left-column height. */
+.voice-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+}
+
+/* The help card stays visible at the bottom of the left rail. */
+.help-card {
+  flex: 0 0 auto;
+}
+
+/* Only the message list should consume and scroll through spare chat height. */
+.house-chat__header,
+.house-chat__composer,
+.house-chat__hint,
+.house-chat__error {
+  flex: 0 0 auto;
+}
+
+.house-chat__list {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/*
+ * Medium screens cannot keep a useful center canvas plus two reserved rails.
+ * Keep equal side cards, but allow them to overlay the full-width game until
+ * the mobile stacked layout takes over.
+ */
+@media (max-width: 1040px) and (min-width: 701px) {
+  :root {
+    --goten-side-gutter: 14px;
+    --goten-side-width: min(320px, calc(50vw - 21px));
+    --goten-panel-top-gap: 18px;
+    --goten-panel-bottom-gap: 14px;
+  }
+
+  .game-panel {
+    inset: var(--goten-topbar-height) 0 0;
+    border-right: 0;
+    border-left: 0;
+  }
+}
+
+/* Mobile uses a compact top/bottom stack rather than side rails. */
+@media (max-width: 700px) {
+  :root {
+    --goten-topbar-height: 82px;
+  }
+
+  .game-panel {
+    inset: var(--goten-topbar-height) 0 0;
+    border-right: 0;
+    border-left: 0;
+  }
+
+  .house-chat {
+    top: 92px;
+    right: 10px;
+    bottom: auto;
+    left: 10px;
+    width: auto;
+    height: min(30vh, 250px);
+    max-height: min(30vh, 250px);
+  }
+
+  .left-panel-stack {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    height: min(50vh, 430px);
+    max-height: min(50vh, 430px);
+  }
+
+  .voice-panel {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+  }
+}
