@@ -70,12 +70,12 @@ export default function HouseChatPanel({
       <div className="house-chat__header">
         <h2>ハウスチャット</h2>
         <p className="house-chat__status">
-          {presenceConnected ? 'Presence接続済み' : '未接続'}
+          {presenceConnected ? '接続済み' : '参加前'}
         </p>
       </div>
 
       {!presenceConnected ? (
-        <p className="house-chat__hint">Presenceに接続するとチャットできます</p>
+        <p className="house-chat__hint">参加するとチャットできます</p>
       ) : (
         <>
           <div ref={listRef} className="house-chat__list" role="log" aria-live="polite">

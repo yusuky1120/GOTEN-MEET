@@ -184,10 +184,10 @@ assert(streamSource.includes('isIncomingChatStreamTooLarge'), 'size gate before 
 assert(streamSource.includes('MAX_CHAT_MESSAGE_BYTES'), 'byte budget enforced');
 assert(streamSource.includes('AbortController'), 'supports aborting oversized streams');
 
-const voiceSource = readFileSync(resolve(root, 'src/voice/VoicePanel.tsx'), 'utf8');
-assert(voiceSource.includes('enqueueChatMessage'), 'shared enqueue helper');
+const realtimeSource = readFileSync(resolve(root, 'src/realtime/useRealtimeSession.ts'), 'utf8');
+assert(realtimeSource.includes('enqueueChatMessage'), 'shared enqueue helper');
 assert(
-  !voiceSource.includes('appendChatMessage(prev, message, chatSeenIdsRef'),
+  !realtimeSource.includes('appendChatMessage(prev, message, chatSeenIdsRef'),
   'seenIds not mutated inside React updater',
 );
 

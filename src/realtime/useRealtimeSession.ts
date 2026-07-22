@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import HouseChatPanel from '../chat/HouseChatPanel';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { DEFAULT_AVATAR_TYPE, type AvatarType } from '../avatar/avatarTypes';
 import type { HouseChatMessage } from '../chat/chatTypes';
 import {
   appendChatMessage,
@@ -9,7 +9,7 @@ import {
   validateOutgoingChatText,
 } from '../chat/chatValidation';
 import {
-  dispatchLocalPlayerClothing,
+  dispatchLocalPlayerAvatar,
   LOCAL_PLAYER_POSITION_EVENT,
   REMOTE_PLAYER_REMOVE_EVENT,
   type LocalPlayerPositionDetail,
@@ -22,6 +22,9 @@ import {
 } from '../game/playerDistanceEvents';
 import { PresenceSession } from '../presence/presenceSession';
 import type { PresenceSessionSnapshot } from '../presence/presenceTypes';
+import { toLiveKitRoomName } from '../voice/roomMapping';
+import type { VoiceSessionSnapshot } from '../voice/types';
+import { VoiceSession } from '../voice/voiceSession';
 import {
   classifiedConnectionError,
   classifyConnectError,
@@ -29,11 +32,9 @@ import {
   classifyHttpApiFailure,
   NO_MAPPED_ROOM_MESSAGE,
   userFacingConnectionMessage,
-} from '../realtime/connectionErrors';
-import { toPresenceState } from '../realtime/playerPresenceCodec';
-import { toLiveKitRoomName } from './roomMapping';
-import type { VoiceSessionSnapshot } from './types';
-import { VoiceSession } from './voiceSession';
+} from './connectionErrors';
+import { toPresenceState } from './playerPresenceCodec';
+import { canStartJoin, validateJoinName } from '../onboarding/joinValidation';
 
 type SessionResponse = {
   serverUrl: string;
@@ -75,36 +76,70 @@ function isSessionResponse(value: unknown): value is SessionResponse {
   );
 }
 
-export type VoicePanelProps = {
+export type JoinProfile = {
+  participantName: string;
+  avatarType: AvatarType;
+};
+
+export type UseRealtimeSessionOptions = {
   currentMapRoom: string;
 };
 
-export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
+export function useRealtimeSession(options: UseRealtimeSessionOptions): {
+  join: (profile: JoinProfile) => Promise<void>;
+  retryVoice: () => Promise<void>;
+  toggleMute: () => Promise<void>;
+  startAudio: () => Promise<void>;
+  sendChat: (text: string) => Promise<boolean>;
+  clearChatError: () => void;
+  leave: () => Promise<void>;
+
+  presence: PresenceSessionSnapshot;
+  voice: VoiceSessionSnapshot;
+  joining: boolean;
+  joined: boolean;
+  joinError: string | null;
+  voiceError: string | null;
+  chatMessages: HouseChatMessage[];
+  chatSending: boolean;
+  chatError: string | null;
+  audioContainerRef: RefObject<HTMLDivElement | null>;
+  avatarType: AvatarType | null;
+  participantName: string | null;
+} {
+  const { currentMapRoom } = options;
+
   const presenceRef = useRef<PresenceSession | null>(null);
   const voiceRef = useRef<VoiceSession | null>(null);
-  const audioContainerRef = useRef<HTMLDivElement>(null);
+  const audioContainerRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef(true);
   const sessionIdentityRef = useRef<string | null>(null);
+  const participantNameRef = useRef<string | null>(null);
+  const avatarTypeRef = useRef<AvatarType | null>(null);
   const lastMapRoomRef = useRef<string | null>(null);
   const lastVoiceRoomRef = useRef<string | null>(null);
   const lastLocalPositionRef = useRef<LocalPlayerPositionDetail | null>(null);
   const chatSeenIdsRef = useRef(new Set<string>());
   const chatSendInFlightRef = useRef(false);
   const wasPresenceConnectedRef = useRef(false);
+  const joiningRef = useRef(false);
+  const retryVoiceInFlightRef = useRef(false);
+  const currentMapRoomRef = useRef(currentMapRoom);
 
-  const [participantName, setParticipantName] = useState('');
-  const [syncWithMap, setSyncWithMap] = useState(true);
-  const [manualRoomName, setManualRoomName] = useState('living-room');
   const [presence, setPresence] = useState<PresenceSessionSnapshot>(INITIAL_PRESENCE);
   const [voice, setVoice] = useState<VoiceSessionSnapshot>(INITIAL_VOICE);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<HouseChatMessage[]>([]);
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [avatarType, setAvatarType] = useState<AvatarType | null>(null);
+  const [participantName, setParticipantName] = useState<string | null>(null);
 
+  currentMapRoomRef.current = currentMapRoom;
   const mappedLiveKitRoom = toLiveKitRoomName(currentMapRoom);
-  const effectiveRoomName = syncWithMap ? (mappedLiveKitRoom ?? '') : manualRoomName;
+  const joined = presence.status === 'connected';
 
   function enqueueChatMessage(message: HouseChatMessage): void {
     const seenIds = chatSeenIdsRef.current;
@@ -112,6 +147,27 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
     seenIds.add(message.id);
     setChatMessages((previous) => appendChatMessage(previous, message));
   }
+
+  const clearChatHistory = useCallback(() => {
+    chatSeenIdsRef.current.clear();
+    chatSendInFlightRef.current = false;
+    setChatMessages([]);
+    setChatSending(false);
+    setChatError(null);
+  }, []);
+
+  const resetLocalProfile = useCallback(() => {
+    sessionIdentityRef.current = null;
+    participantNameRef.current = null;
+    avatarTypeRef.current = null;
+    lastVoiceRoomRef.current = null;
+    setParticipantName(null);
+    setAvatarType(null);
+    dispatchLocalPlayerAvatar({
+      avatarType: DEFAULT_AVATAR_TYPE,
+      clothingVariant: 0,
+    });
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -145,7 +201,6 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         own: Boolean(localIdentity && payload.participantIdentity === localIdentity),
       };
 
-      // Dedup + seenIds update happen outside the React state updater.
       enqueueChatMessage(message);
     });
 
@@ -163,8 +218,9 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
           ? voiceSnap.roomName || null
           : null;
       const mapRoomName = lastMapRoomRef.current;
+      const nextAvatarType = avatarTypeRef.current ?? DEFAULT_AVATAR_TYPE;
       void presenceSessionInner.publishPresence(
-        toPresenceState(detail, mapRoomName, voiceRoomName),
+        toPresenceState(detail, mapRoomName, voiceRoomName, nextAvatarType),
       );
     };
 
@@ -202,24 +258,21 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
       voiceRef.current = null;
       sessionIdentityRef.current = null;
       chatSeenIdsRef.current.clear();
-      dispatchLocalPlayerClothing({ clothingVariant: 0 });
+      dispatchLocalPlayerAvatar({
+        avatarType: DEFAULT_AVATAR_TYPE,
+        clothingVariant: 0,
+      });
     };
   }, []);
 
-  // Clear realtime-only chat history when Presence disconnects.
   useEffect(() => {
     const connected = presence.status === 'connected';
     if (wasPresenceConnectedRef.current && !connected) {
-      chatSeenIdsRef.current.clear();
-      chatSendInFlightRef.current = false;
-      setChatMessages([]);
-      setChatSending(false);
-      setChatError(null);
+      clearChatHistory();
     }
     wasPresenceConnectedRef.current = connected;
-  }, [presence.status]);
+  }, [presence.status, clearChatHistory]);
 
-  // Keep mapRoomName on presence when the local map room changes.
   useEffect(() => {
     const mapRoom = currentMapRoom || null;
     if (mapRoom === lastMapRoomRef.current) return;
@@ -230,15 +283,13 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
     void presenceSession.notifyRoomChange({ mapRoomName: mapRoom });
   }, [currentMapRoom]);
 
-  // Voice room follows map (or stays on manual room until reconnect).
   useEffect(() => {
-    if (!syncWithMap) return;
     if (presence.status !== 'connected') return;
     if (voice.status !== 'connected' && voice.status !== 'switching') {
       return;
     }
     if (!mappedLiveKitRoom) {
-      if (mountedRef.current) setLocalError(NO_MAPPED_ROOM_MESSAGE);
+      if (mountedRef.current) setVoiceError(NO_MAPPED_ROOM_MESSAGE);
       return;
     }
     if (mappedLiveKitRoom === voice.roomName && voice.status === 'connected') {
@@ -252,7 +303,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
 
     void (async () => {
       try {
-        if (mountedRef.current) setLocalError(null);
+        if (mountedRef.current) setVoiceError(null);
         await voiceSession.switchRoom({ roomName: mappedLiveKitRoom });
         if (cancelled || !mountedRef.current) return;
         lastVoiceRoomRef.current = mappedLiveKitRoom;
@@ -265,7 +316,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         if (error instanceof Error && error.message === 'Operation cancelled') return;
         lastVoiceRoomRef.current = null;
         await presenceSession.notifyRoomChange({ voiceRoomName: null });
-        setLocalError(userFacingConnectionMessage(error, 'voice-switch'));
+        setVoiceError(userFacingConnectionMessage(error, 'voice-switch'));
       }
     })();
 
@@ -274,55 +325,47 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
     };
   }, [
     currentMapRoom,
-    syncWithMap,
     mappedLiveKitRoom,
     presence.status,
     voice.status,
     voice.roomName,
   ]);
 
-  const presenceConnected = presence.status === 'connected';
-  const voiceBusy =
-    voice.status === 'connecting' ||
-    voice.status === 'disconnecting' ||
-    voice.status === 'switching' ||
-    connecting;
-  const voiceConnected = voice.status === 'connected';
-  const canConnect =
-    !voiceBusy &&
-    !presenceConnected &&
-    !connecting &&
-    participantName.trim().length > 0;
-  const errorMessage = localError || presence.errorMessage || voice.errorMessage;
+  const clearChatError = useCallback(() => {
+    setChatError(null);
+  }, []);
 
-  async function handleConnect(event: FormEvent) {
-    event.preventDefault();
+  const join = useCallback(async (profile: JoinProfile) => {
     if (!mountedRef.current) return;
-    setLocalError(null);
 
     const presenceSession = presenceRef.current;
     const voiceSession = voiceRef.current;
-    const audioContainer = audioContainerRef.current;
-    if (!presenceSession || !voiceSession || !audioContainer) return;
+    if (!presenceSession || !voiceSession) return;
 
-    const name = participantName.trim();
-    if (!name) {
-      setLocalError('表示名を入力してください');
+    if (
+      !canStartJoin({
+        joining: joiningRef.current,
+        presenceConnected: presenceSession.getSnapshot().status === 'connected',
+      })
+    ) {
       return;
     }
 
-    const roomName = syncWithMap ? mappedLiveKitRoom : manualRoomName.trim();
-    if (syncWithMap && !roomName) {
-      setLocalError(NO_MAPPED_ROOM_MESSAGE);
+    const validatedName = validateJoinName(profile.participantName);
+    if (!validatedName.ok) {
+      setJoinError(validatedName.message);
       return;
     }
-    if (!roomName) {
-      setLocalError('LiveKit room 名を入力してください');
-      return;
-    }
+    const name = validatedName.name;
 
-    setConnecting(true);
-    lastMapRoomRef.current = currentMapRoom || null;
+    joiningRef.current = true;
+    setJoining(true);
+    setJoinError(null);
+    setVoiceError(null);
+    lastMapRoomRef.current = currentMapRoomRef.current || null;
+
+    const selectedAvatarType = profile.avatarType;
+    const roomName = toLiveKitRoomName(currentMapRoomRef.current);
 
     try {
       let sessionResponse: Response;
@@ -348,16 +391,22 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         );
       }
 
-      sessionIdentityRef.current = sessionPayload.participantIdentity;
-      dispatchLocalPlayerClothing({
-        clothingVariant: getPlayerClothingVariant(sessionPayload.participantIdentity),
+      const identity = sessionPayload.participantIdentity;
+      sessionIdentityRef.current = identity;
+      participantNameRef.current = name;
+      avatarTypeRef.current = selectedAvatarType;
+      setParticipantName(name);
+      setAvatarType(selectedAvatarType);
+      dispatchLocalPlayerAvatar({
+        avatarType: selectedAvatarType,
+        clothingVariant: getPlayerClothingVariant(identity),
       });
 
       try {
         await presenceSession.connect({
           serverUrl: sessionPayload.serverUrl,
           presenceToken: sessionPayload.presenceToken,
-          participantIdentity: sessionPayload.participantIdentity,
+          participantIdentity: identity,
           participantName: name,
         });
       } catch (error) {
@@ -367,15 +416,28 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
       const latest = lastLocalPositionRef.current;
       if (latest) {
         await presenceSession.publishPresence(
-          toPresenceState(latest, lastMapRoomRef.current, null),
+          toPresenceState(latest, lastMapRoomRef.current, null, selectedAvatarType),
         );
+      }
+
+      if (!roomName) {
+        if (mountedRef.current) setVoiceError(NO_MAPPED_ROOM_MESSAGE);
+        return;
+      }
+
+      const audioContainer = audioContainerRef.current;
+      if (!audioContainer) {
+        if (mountedRef.current) {
+          setVoiceError(userFacingConnectionMessage(new Error('Audio container is missing'), 'voice'));
+        }
+        return;
       }
 
       try {
         await voiceSession.connect({
           roomName,
           participantName: name,
-          participantIdentity: sessionPayload.participantIdentity,
+          participantIdentity: identity,
           audioContainer,
         });
         lastVoiceRoomRef.current = roomName;
@@ -385,6 +447,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
               lastLocalPositionRef.current,
               lastMapRoomRef.current,
               roomName,
+              selectedAvatarType,
             ),
           );
         }
@@ -392,7 +455,8 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
           mapRoomName: lastMapRoomRef.current,
           voiceRoomName: roomName,
         });
-      } catch (voiceError) {
+        if (mountedRef.current) setVoiceError(null);
+      } catch (error) {
         lastVoiceRoomRef.current = null;
         if (lastLocalPositionRef.current) {
           await presenceSession.publishPresence(
@@ -400,20 +464,28 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
               lastLocalPositionRef.current,
               lastMapRoomRef.current,
               null,
+              selectedAvatarType,
             ),
           );
         } else {
           await presenceSession.notifyRoomChange({ voiceRoomName: null });
         }
         if (mountedRef.current) {
-          setLocalError(
-            `マップ表示のみ接続中（音声エラー）: ${userFacingConnectionMessage(voiceError, 'voice')}`,
-          );
+          setVoiceError(userFacingConnectionMessage(error, 'voice'));
         }
       }
     } catch (error) {
       sessionIdentityRef.current = null;
-      dispatchLocalPlayerClothing({ clothingVariant: 0 });
+      participantNameRef.current = null;
+      avatarTypeRef.current = null;
+      if (mountedRef.current) {
+        setParticipantName(null);
+        setAvatarType(null);
+      }
+      dispatchLocalPlayerAvatar({
+        avatarType: DEFAULT_AVATAR_TYPE,
+        clothingVariant: 0,
+      });
       try {
         await presenceRef.current?.disconnect();
       } catch {
@@ -426,55 +498,127 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
       }
       if (!mountedRef.current) return;
       if (error instanceof Error && error.message === 'Operation cancelled') return;
-      setLocalError(userFacingConnectionMessage(error, 'generic'));
+      setJoinError(userFacingConnectionMessage(error, 'generic'));
     } finally {
-      if (mountedRef.current) setConnecting(false);
+      joiningRef.current = false;
+      if (mountedRef.current) setJoining(false);
     }
-  }
+  }, []);
 
-  async function handleToggleMute() {
+  const retryVoice = useCallback(async () => {
     if (!mountedRef.current) return;
-    setLocalError(null);
+    if (joiningRef.current || retryVoiceInFlightRef.current) return;
+
+    const presenceSession = presenceRef.current;
+    const voiceSession = voiceRef.current;
+    const audioContainer = audioContainerRef.current;
+    const identity = sessionIdentityRef.current;
+    const name = participantNameRef.current?.trim() ?? '';
+    const selectedAvatarType = avatarTypeRef.current ?? DEFAULT_AVATAR_TYPE;
+
+    if (!presenceSession || !voiceSession || !audioContainer || !identity || !name) {
+      setVoiceError('音声再接続に必要な情報がありません。もう一度参加してください。');
+      return;
+    }
+    if (presenceSession.getSnapshot().status !== 'connected') {
+      setVoiceError('参加してから音声を再接続してください。');
+      return;
+    }
+
+    const roomName = toLiveKitRoomName(currentMapRoomRef.current);
+    if (!roomName) {
+      setVoiceError(NO_MAPPED_ROOM_MESSAGE);
+      return;
+    }
+
+    const voiceStatus = voiceSession.getSnapshot().status;
+    if (voiceStatus !== 'idle' && voiceStatus !== 'error') {
+      return;
+    }
+
+    retryVoiceInFlightRef.current = true;
+    setVoiceError(null);
+
     try {
-      await voiceRef.current?.setMuted(!voice.muted);
+      await voiceSession.connect({
+        roomName,
+        participantName: name,
+        participantIdentity: identity,
+        audioContainer,
+      });
+      lastVoiceRoomRef.current = roomName;
+      if (lastLocalPositionRef.current) {
+        await presenceSession.publishPresence(
+          toPresenceState(
+            lastLocalPositionRef.current,
+            lastMapRoomRef.current,
+            roomName,
+            selectedAvatarType,
+          ),
+        );
+      }
+      await presenceSession.notifyRoomChange({
+        mapRoomName: lastMapRoomRef.current,
+        voiceRoomName: roomName,
+      });
+      if (mountedRef.current) setVoiceError(null);
     } catch (error) {
-      if (!mountedRef.current) return;
-      setLocalError(error instanceof Error ? error.message : 'Failed to toggle mute');
-    }
-  }
-
-  async function handleLeave() {
-    if (!mountedRef.current) return;
-    setLocalError(null);
-    try {
-      await voiceRef.current?.disconnect();
-      await presenceRef.current?.disconnect();
-      sessionIdentityRef.current = null;
       lastVoiceRoomRef.current = null;
-      dispatchLocalPlayerClothing({ clothingVariant: 0 });
-    } catch (error) {
+      try {
+        await presenceSession.notifyRoomChange({ voiceRoomName: null });
+      } catch {
+        // ignore
+      }
       if (!mountedRef.current) return;
       if (error instanceof Error && error.message === 'Operation cancelled') return;
-      setLocalError(error instanceof Error ? error.message : 'Failed to leave');
+      setVoiceError(userFacingConnectionMessage(error, 'voice'));
+    } finally {
+      retryVoiceInFlightRef.current = false;
     }
-  }
+  }, []);
 
-  async function handleStartAudio() {
+  const toggleMute = useCallback(async () => {
     if (!mountedRef.current) return;
-    setLocalError(null);
+    try {
+      const muted = voiceRef.current?.getSnapshot().muted ?? false;
+      await voiceRef.current?.setMuted(!muted);
+    } catch (error) {
+      if (!mountedRef.current) return;
+      setVoiceError(error instanceof Error ? error.message : 'Failed to toggle mute');
+    }
+  }, []);
+
+  const startAudio = useCallback(async () => {
+    if (!mountedRef.current) return;
     try {
       await voiceRef.current?.startAudio();
     } catch (error) {
       if (!mountedRef.current) return;
-      setLocalError(error instanceof Error ? error.message : 'Failed to start audio playback');
+      setVoiceError(error instanceof Error ? error.message : 'Failed to start audio playback');
     }
-  }
+  }, []);
 
-  async function handleSendChat(raw: string): Promise<boolean> {
+  const leave = useCallback(async () => {
+    if (!mountedRef.current) return;
+    setJoinError(null);
+    setVoiceError(null);
+    try {
+      await voiceRef.current?.disconnect();
+      await presenceRef.current?.disconnect();
+      resetLocalProfile();
+      clearChatHistory();
+    } catch (error) {
+      if (!mountedRef.current) return;
+      if (error instanceof Error && error.message === 'Operation cancelled') return;
+      setJoinError(error instanceof Error ? error.message : 'Failed to leave');
+    }
+  }, [clearChatHistory, resetLocalProfile]);
+
+  const sendChat = useCallback(async (raw: string): Promise<boolean> => {
     if (chatSendInFlightRef.current) return false;
     const presenceSession = presenceRef.current;
     if (!presenceSession || presenceSession.getSnapshot().status !== 'connected') {
-      setChatError('Presenceに接続するとチャットできます');
+      setChatError('参加するとチャットできます');
       return false;
     }
 
@@ -490,6 +634,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
       return false;
     }
 
+    const displayName = participantNameRef.current ?? '';
     chatSendInFlightRef.current = true;
     setChatSending(true);
     setChatError(null);
@@ -501,7 +646,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
       const message: HouseChatMessage = {
         id,
         participantIdentity: identity,
-        participantName: sanitizeChatDisplayName(participantName, identity),
+        participantName: sanitizeChatDisplayName(displayName, identity),
         text: validated.text,
         sentAt: normalizeChatSentAt(sentAt),
         own: true,
@@ -517,250 +662,27 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
       chatSendInFlightRef.current = false;
       if (mountedRef.current) setChatSending(false);
     }
-  }
+  }, []);
 
-  return (
-    <>
-      <aside className="voice-panel" aria-label="Voice chat">
-      <div className="voice-panel__header">
-        <h2>接続（Presence + Voice）</h2>
-        <p>
-          全体表示は固定 Presence Room、音声だけがマップ部屋の Voice Room に入ります。服の色で参加者を区別します。
-        </p>
-      </div>
-
-      <label className="voice-sync">
-        <input
-          type="checkbox"
-          checked={syncWithMap}
-          onChange={(event) => {
-            setSyncWithMap(event.target.checked);
-            setLocalError(null);
-          }}
-          disabled={voiceBusy || presenceConnected}
-        />
-        <span>マップの部屋と音声を連動する</span>
-      </label>
-
-      <label className="voice-sync">
-        <input
-          type="checkbox"
-          checked={voice.proximityAudioEnabled}
-          onChange={(event) => {
-            voiceRef.current?.setProximityAudioEnabled(event.target.checked);
-          }}
-          disabled={voice.status === 'idle'}
-        />
-        <span>距離に応じて音量を変える</span>
-      </label>
-
-      <div className="voice-panel__status">
-        <p>
-          <span>マップ部屋</span>
-          <strong>{currentMapRoom || '—'}</strong>
-        </p>
-        <p>
-          <span>対応 Voice room</span>
-          <strong>{mappedLiveKitRoom ?? '（なし）'}</strong>
-        </p>
-      </div>
-
-      <form className="voice-panel__form" onSubmit={handleConnect}>
-        <label className="voice-field">
-          <span>表示名</span>
-          <input
-            type="text"
-            value={participantName}
-            onChange={(event) => setParticipantName(event.target.value)}
-            placeholder="例: alice"
-            maxLength={32}
-            disabled={voiceBusy || presenceConnected}
-            autoComplete="off"
-          />
-        </label>
-
-        <label className="voice-field">
-          <span>Voice room 名</span>
-          <input
-            type="text"
-            value={effectiveRoomName}
-            onChange={(event) => {
-              if (!syncWithMap) {
-                setManualRoomName(event.target.value);
-              }
-            }}
-            placeholder={syncWithMap ? 'マップ連動中' : 'living-room'}
-            maxLength={64}
-            readOnly={syncWithMap}
-            disabled={voiceBusy || presenceConnected}
-            autoComplete="off"
-          />
-        </label>
-
-        <div className="voice-panel__actions">
-          <button type="submit" disabled={!canConnect}>
-            {connecting || presence.status === 'connecting' || voice.status === 'connecting'
-              ? '接続中…'
-              : voice.status === 'switching'
-                ? '切替中…'
-                : '接続'}
-          </button>
-          <button
-            type="button"
-            onClick={handleToggleMute}
-            disabled={(!voiceConnected && voice.status !== 'switching') || voiceBusy}
-          >
-            {voice.muted ? 'ミュート解除' : 'ミュート'}
-          </button>
-          <button
-            type="button"
-            onClick={handleLeave}
-            disabled={
-              !presenceConnected &&
-              voice.status === 'idle' &&
-              !connecting
-            }
-          >
-            退出
-          </button>
-        </div>
-      </form>
-
-      <div className="voice-panel__status">
-        <p>
-          <span>全体接続</span>
-          <strong>{presenceStatusLabel(presence.status)}</strong>
-        </p>
-        <p>
-          <span>オンライン人数</span>
-          <strong>{presenceConnected ? presence.onlineCount : '—'}</strong>
-        </p>
-        <p>
-          <span>位置同期</span>
-          <strong>{positionSyncLabel(presence.positionSyncStatus)}</strong>
-        </p>
-        <p>
-          <span>音声接続</span>
-          <strong>{voiceStatusLabel(voice.status)}</strong>
-        </p>
-        <p>
-          <span>現在の音声 room</span>
-          <strong>{voice.roomName || '—'}</strong>
-        </p>
-        <p>
-          <span>同じ音声 room の人数</span>
-          <strong>{voiceConnected || voice.status === 'switching' ? voice.voiceParticipantCount : '—'}</strong>
-        </p>
-        <p>
-          <span>Identity</span>
-          <strong>{presence.participantIdentity ?? sessionIdentityRef.current ?? '—'}</strong>
-        </p>
-        <p>
-          <span>距離減衰</span>
-          <strong>{voice.proximityAudioEnabled ? 'ON' : 'OFF'}</strong>
-        </p>
-        <p>
-          <span>最近傍距離</span>
-          <strong>
-            {voice.nearestDistance === null ? '—' : `${voice.nearestDistance.toFixed(0)}px`}
-          </strong>
-        </p>
-        <p>
-          <span>最近傍音量</span>
-          <strong>
-            {voice.nearestVolume === null ? '—' : voice.nearestVolume.toFixed(2)}
-          </strong>
-        </p>
-        <p>
-          <span>stale人数</span>
-          <strong>{voice.staleParticipantCount}</strong>
-        </p>
-      </div>
-
-      {voice.participants.length > 0 && (
-        <ul className="voice-panel__participants">
-          {voice.participants.map((participant) => (
-            <li key={participant.identity}>
-              {participant.name}
-              {participant.isLocal ? '（自分）' : ''}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {voice.needsAudioStart && (
-        <div className="voice-panel__audio-unlock">
-          <p>ブラウザが音声再生をブロックしています。</p>
-          <button type="button" onClick={handleStartAudio}>
-            音声を有効にする
-          </button>
-        </div>
-      )}
-
-      {errorMessage && (
-        <p className="voice-panel__error" role="alert">
-          {errorMessage}
-        </p>
-      )}
-
-      <div ref={audioContainerRef} className="voice-audio-container" aria-hidden="true" />
-    </aside>
-
-      <HouseChatPanel
-        presenceConnected={presenceConnected}
-        messages={chatMessages}
-        sending={chatSending}
-        error={chatError}
-        onClearError={() => setChatError(null)}
-        onSend={handleSendChat}
-      />
-    </>
-  );
-}
-
-function presenceStatusLabel(status: PresenceSessionSnapshot['status']): string {
-  switch (status) {
-    case 'disconnected':
-      return '未接続';
-    case 'connecting':
-      return '接続中';
-    case 'connected':
-      return '接続済み';
-    case 'error':
-      return 'エラー';
-    default:
-      return status;
-  }
-}
-
-function voiceStatusLabel(status: VoiceSessionSnapshot['status']): string {
-  switch (status) {
-    case 'idle':
-      return '未接続';
-    case 'connecting':
-      return '接続中';
-    case 'connected':
-      return '接続済み';
-    case 'switching':
-      return '部屋切替中';
-    case 'disconnecting':
-      return '切断中';
-    case 'error':
-      return 'エラー';
-    default:
-      return status;
-  }
-}
-
-function positionSyncLabel(status: PresenceSessionSnapshot['positionSyncStatus']): string {
-  switch (status) {
-    case 'idle':
-      return '未接続';
-    case 'syncing':
-      return '同期中';
-    case 'error':
-      return 'エラー';
-    default:
-      return status;
-  }
+  return {
+    join,
+    retryVoice,
+    toggleMute,
+    startAudio,
+    sendChat,
+    clearChatError,
+    leave,
+    presence,
+    voice,
+    joining,
+    joined,
+    joinError,
+    voiceError,
+    chatMessages,
+    chatSending,
+    chatError,
+    audioContainerRef,
+    avatarType,
+    participantName,
+  };
 }

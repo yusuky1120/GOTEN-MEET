@@ -1,15 +1,26 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
+import HouseChatPanel from './chat/HouseChatPanel';
+import GameHelpButton from './controls/GameHelpButton';
+import GameHelpPopover from './controls/GameHelpPopover';
+import MicrophoneButton from './controls/MicrophoneButton';
 import { createGameConfig } from './game/houseGame2';
-import VoicePanel from './voice/VoicePanel';
+import JoinOverlay from './onboarding/JoinOverlay';
+import { useRealtimeSession } from './realtime/useRealtimeSession';
 
 const MAP_LABELS = new Set(['キッチン', '廊下', 'リビング', '作業部屋', '玄関']);
 const WALL_COLOR = 0x493d30;
 const ENTRANCE_MAT_COLOR = 0x65734e;
+const HELP_PANEL_ID = 'game-help-panel';
 
 export default function App() {
   const gameRootRef = useRef<HTMLDivElement>(null);
   const [roomName, setRoomName] = useState('玄関');
+  const [helpOpen, setHelpOpen] = useState(false);
+  const closeHelp = useCallback(() => setHelpOpen(false), []);
+  const toggleHelp = useCallback(() => setHelpOpen((open) => !open), []);
+
+  const session = useRealtimeSession({ currentMapRoom: roomName });
 
   useEffect(() => {
     if (!gameRootRef.current) return;
@@ -37,7 +48,6 @@ export default function App() {
           }
 
           if (child instanceof Phaser.GameObjects.Rectangle) {
-            // 玄関の出口を中央廊下（x=520〜640）と一直線にする。
             if (child.fillColor === WALL_COLOR && child.y === 880 && child.x === 485) {
               child.setPosition(470, 880).setDisplaySize(100, 12);
               const wall = child as Phaser.GameObjects.Rectangle & {
@@ -58,14 +68,12 @@ export default function App() {
               continue;
             }
 
-            // 玄関マットも中央廊下と出口の軸上へ移動する。
             if (child.fillColor === ENTRANCE_MAT_COLOR && child.y === 850 && child.x === 610) {
               child.setX(580);
               tweaked += 1;
               continue;
             }
 
-            // シンクとコンロの位置を左右で入れ替える。
             if (child.fillColor === 0xaeb8ba && child.y === 92 && child.x === 360) {
               child.setX(505);
               tweaked += 1;
@@ -119,32 +127,55 @@ export default function App() {
           <p className="eyebrow">SHARE HOUSE PROTOTYPE</p>
           <h1>GOTEN MEET</h1>
         </div>
-        <div className="status-card">
-          <span>現在地</span>
-          <strong>{roomName}</strong>
+        <div className="topbar__trailing">
+          <MicrophoneButton
+            joined={session.joined}
+            voice={session.voice}
+            voiceError={session.voiceError}
+            onToggleMute={() => {
+              void session.toggleMute();
+            }}
+            onRetryVoice={() => {
+              void session.retryVoice();
+            }}
+            onStartAudio={() => {
+              void session.startAudio();
+            }}
+          />
+          <div className="status-card">
+            <span>現在地</span>
+            <strong>{roomName}</strong>
+          </div>
         </div>
       </header>
 
       <section className="game-panel">
         <div ref={gameRootRef} className="game-root" />
+        <div className="game-help">
+          <GameHelpPopover open={helpOpen} panelId={HELP_PANEL_ID} onClose={closeHelp} />
+          <GameHelpButton open={helpOpen} panelId={HELP_PANEL_ID} onToggle={toggleHelp} />
+        </div>
       </section>
 
-      <div className="left-panel-stack">
-        <VoicePanel currentMapRoom={roomName} />
+      <div ref={session.audioContainerRef} className="voice-audio-container" aria-hidden="true" />
 
-        <aside className="help-card">
-          <h2>操作方法</h2>
-          <p><kbd>WASD</kbd> または <kbd>矢印キー</kbd> で移動</p>
-          <p><kbd>E</kbd> 近くの椅子・ソファに座る／立つ</p>
-          <p><kbd>Esc</kbd> 着席確認を閉じる／立つ</p>
-          <p>壁・家具には当たり判定があります。</p>
-          <div className="legend">
-            <span><i className="legend-dot room" />部屋</span>
-            <span><i className="legend-dot hall" />廊下</span>
-            <span><i className="legend-dot avatar" />あなた</span>
-          </div>
-        </aside>
-      </div>
+      <JoinOverlay
+        open={!session.joined}
+        joining={session.joining}
+        error={session.joinError}
+        onJoin={(profile) => {
+          void session.join(profile);
+        }}
+      />
+
+      <HouseChatPanel
+        presenceConnected={session.joined}
+        messages={session.chatMessages}
+        sending={session.chatSending}
+        error={session.chatError}
+        onClearError={session.clearChatError}
+        onSend={session.sendChat}
+      />
     </main>
   );
 }
