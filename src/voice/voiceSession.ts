@@ -18,6 +18,7 @@ import {
 } from '../audio/proximityAudioConstants';
 import { calculateProximityVolume, clamp01 } from '../audio/proximityVolume';
 import {
+  classifiedConnectionError,
   classifyFetchNetworkError,
   classifyHttpApiFailure,
 } from '../realtime/connectionErrors';
@@ -584,7 +585,7 @@ export class VoiceSession {
         body: JSON.stringify({ roomName, participantName, participantIdentity }),
       });
     } catch (error) {
-      throw new Error(classifyFetchNetworkError(error, 'voice'));
+      throw classifiedConnectionError(classifyFetchNetworkError(error, 'voice-token'));
     }
 
     let payload: unknown = null;
@@ -595,11 +596,13 @@ export class VoiceSession {
     }
 
     if (!response.ok) {
-      throw new Error(classifyHttpApiFailure(response.status, payload, 'voice-token'));
+      throw classifiedConnectionError(
+        classifyHttpApiFailure(response.status, payload, 'voice-token'),
+      );
     }
 
     if (!isTokenResponse(payload) || !payload.participantToken || !payload.serverUrl) {
-      throw new Error('Voiceトークンの応答が不完全です');
+      throw classifiedConnectionError('Voiceトークンの応答が不完全です');
     }
 
     return payload;

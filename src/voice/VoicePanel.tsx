@@ -14,10 +14,12 @@ import {
 import { PresenceSession } from '../presence/presenceSession';
 import type { PresenceSessionSnapshot } from '../presence/presenceTypes';
 import {
+  classifiedConnectionError,
   classifyConnectError,
   classifyFetchNetworkError,
   classifyHttpApiFailure,
   NO_MAPPED_ROOM_MESSAGE,
+  userFacingConnectionMessage,
 } from '../realtime/connectionErrors';
 import { toPresenceState } from '../realtime/playerPresenceCodec';
 import { toLiveKitRoomName } from './roomMapping';
@@ -204,7 +206,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         if (error instanceof Error && error.message === 'Operation cancelled') return;
         lastVoiceRoomRef.current = null;
         await presenceSession.notifyRoomChange({ voiceRoomName: null });
-        setLocalError(classifyConnectError(error, 'voice-switch'));
+        setLocalError(userFacingConnectionMessage(error, 'voice-switch'));
       }
     })();
 
@@ -272,7 +274,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
           body: JSON.stringify({ participantName: name }),
         });
       } catch (error) {
-        throw new Error(classifyFetchNetworkError(error, 'session'));
+        throw classifiedConnectionError(classifyFetchNetworkError(error, 'session'));
       }
 
       let sessionPayload: unknown = null;
@@ -282,7 +284,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         sessionPayload = null;
       }
       if (!sessionResponse.ok || !isSessionResponse(sessionPayload)) {
-        throw new Error(
+        throw classifiedConnectionError(
           classifyHttpApiFailure(sessionResponse.status, sessionPayload, 'session'),
         );
       }
@@ -300,7 +302,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
           participantName: name,
         });
       } catch (error) {
-        throw new Error(classifyConnectError(error, 'presence'));
+        throw classifiedConnectionError(classifyConnectError(error, 'presence'));
       }
 
       const latest = lastLocalPositionRef.current;
@@ -346,7 +348,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
         }
         if (mountedRef.current) {
           setLocalError(
-            `マップ表示のみ接続中（音声エラー）: ${classifyConnectError(voiceError, 'voice')}`,
+            `マップ表示のみ接続中（音声エラー）: ${userFacingConnectionMessage(voiceError, 'voice')}`,
           );
         }
       }
@@ -365,9 +367,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
       }
       if (!mountedRef.current) return;
       if (error instanceof Error && error.message === 'Operation cancelled') return;
-      setLocalError(
-        error instanceof Error ? error.message : classifyConnectError(error, 'generic'),
-      );
+      setLocalError(userFacingConnectionMessage(error, 'generic'));
     } finally {
       if (mountedRef.current) setConnecting(false);
     }
