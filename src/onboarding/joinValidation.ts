@@ -24,6 +24,21 @@ export function shouldCloseJoinOverlay(options: {
   return options.presenceConnected;
 }
 
+/** Keep the modal visible until the full join attempt, including Voice, has settled. */
+export function shouldShowJoinOverlay(options: {
+  joining: boolean;
+  presenceConnected: boolean;
+}): boolean {
+  return options.joining || !options.presenceConnected;
+}
+
+export function didPresenceDisconnect(options: {
+  wasConnected: boolean;
+  connected: boolean;
+}): boolean {
+  return options.wasConnected && !options.connected;
+}
+
 export function shouldKeepJoinOverlayOnPresenceFailure(options: {
   presenceConnected: boolean;
   joinError: string | null;
