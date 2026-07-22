@@ -2,7 +2,6 @@ import {
   Room,
   RoomEvent,
   type RemoteParticipant,
-  type Participant,
 } from 'livekit-client';
 import {
   dispatchRemotePlayerPosition,
@@ -19,7 +18,6 @@ import {
 } from '../realtime/playerPresenceCodec';
 import {
   POSITION_PUBLISH_ERROR_LOG_COOLDOWN_MS,
-  REMOTE_PLAYER_TIMEOUT_MS,
   SNAPSHOT_MIN_INTERVAL_MS,
 } from '../realtime/playerPositionConstants';
 import type { LocalPresenceState, PresenceSessionSnapshot } from './presenceTypes';
@@ -45,7 +43,6 @@ export class PresenceSession {
   private sequence = 0;
   private lastState: LocalPresenceState | null = null;
   private lastAcceptedSequence = new Map<string, number>();
-  private lastRemotePacketAt = new Map<string, number>();
   private knownRemotes = new Set<string>();
   private lastSnapshotSentAt = new Map<string, number>();
   private lastPublishErrorLogAt = 0;
@@ -86,7 +83,6 @@ export class PresenceSession {
       return;
     }
     this.lastAcceptedSequence.set(participant.identity, message.sequence);
-    this.lastRemotePacketAt.set(participant.identity, Date.now());
 
     const wasKnown = this.knownRemotes.has(participant.identity);
     this.knownRemotes.add(participant.identity);
@@ -283,7 +279,6 @@ export class PresenceSession {
 
   private forgetRemote(identity: string): void {
     this.lastAcceptedSequence.delete(identity);
-    this.lastRemotePacketAt.delete(identity);
     this.lastSnapshotSentAt.delete(identity);
     if (this.knownRemotes.delete(identity)) {
       dispatchRemotePlayerRemove(identity);
@@ -296,20 +291,21 @@ export class PresenceSession {
   private clearRemotes(): void {
     this.knownRemotes.clear();
     this.lastAcceptedSequence.clear();
-    this.lastRemotePacketAt.clear();
     this.lastSnapshotSentAt.clear();
     dispatchRemotePlayersClear();
   }
 
+  /**
+   * Presence Room membership is the source of truth for remote visibility.
+   * Packet gaps alone must not remove remotes; only clean up identities that
+   * are no longer in `room.remoteParticipants` (missed disconnect events).
+   */
   private startWatchdog(): void {
     this.stopWatchdog();
     this.watchdog = setInterval(() => {
       if (!this.room || this.status !== 'connected') return;
-      const now = Date.now();
       for (const identity of [...this.knownRemotes]) {
-        const stillInRoom = this.room.remoteParticipants.has(identity);
-        const last = this.lastRemotePacketAt.get(identity) ?? 0;
-        if (!stillInRoom || now - last >= REMOTE_PLAYER_TIMEOUT_MS) {
+        if (!this.room.remoteParticipants.has(identity)) {
           this.forgetRemote(identity);
         }
       }
