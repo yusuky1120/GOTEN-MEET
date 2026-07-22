@@ -39,7 +39,7 @@ export class PresenceSession {
   private room: Room | null = null;
   private listeners = new Set<PresenceSessionListener>();
   private chatListeners = new Set<PresenceChatListener>();
-  private textStreamRegistered = false;
+  private textStreamRoom: Room | null = null;
   private status: PresenceSessionSnapshot['status'] = 'disconnected';
   private participantIdentity: string | null = null;
   private participantName = '';
@@ -321,14 +321,18 @@ export class PresenceSession {
   }
 
   private registerTextStream(room: Room): void {
-    this.unregisterTextStream(room);
+    if (this.textStreamRoom === room) return;
+
+    if (this.textStreamRoom) {
+      this.unregisterTextStream(this.textStreamRoom);
+    }
+
     room.registerTextStreamHandler(HOUSE_CHAT_TOPIC, this.onTextStream);
-    this.textStreamRegistered = true;
+    this.textStreamRoom = room;
   }
 
   private unregisterTextStream(room: Room | null): void {
-    if (!room || !this.textStreamRegistered) {
-      this.textStreamRegistered = false;
+    if (!room || this.textStreamRoom !== room) {
       return;
     }
     try {
@@ -336,7 +340,7 @@ export class PresenceSession {
     } catch {
       // ignore
     }
-    this.textStreamRegistered = false;
+    this.textStreamRoom = null;
   }
 
   private resolveParticipantName(identity: string): string {
