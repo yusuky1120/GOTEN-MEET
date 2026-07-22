@@ -1,17 +1,17 @@
 /*
  * Desktop workspace layout.
  *
- * The original overlay placed both side panels on top of the full-width game
- * canvas. These rules reserve equal left/right rails for the controls and chat,
- * leaving the Phaser canvas in a dedicated center column.
+ * Equal side rails keep the controls and chat outside the Phaser canvas. The
+ * rails are flush with the viewport edges so the center game area stays as
+ * wide as possible.
  */
 :root {
   --goten-topbar-height: 96px;
-  --goten-side-gutter: clamp(18px, 2vw, 30px);
-  --goten-side-width: clamp(260px, 23vw, 360px);
-  --goten-side-gap: clamp(14px, 1.5vw, 24px);
-  --goten-panel-top-gap: clamp(18px, 2vw, 30px);
-  --goten-panel-bottom-gap: clamp(18px, 2vw, 30px);
+  --goten-side-gutter: 0px;
+  --goten-side-width: clamp(250px, 20vw, 320px);
+  --goten-side-gap: clamp(6px, 0.7vw, 10px);
+  --goten-panel-top-gap: clamp(14px, 1.5vw, 22px);
+  --goten-panel-bottom-gap: clamp(14px, 1.5vw, 22px);
   --goten-side-rail: calc(
     var(--goten-side-gutter) + var(--goten-side-width) + var(--goten-side-gap)
   );
@@ -43,6 +43,15 @@
 
 .house-chat {
   right: var(--goten-side-gutter);
+  border-right: 0;
+  border-radius: 14px 0 0 14px;
+}
+
+/* Visually connect the left cards to the viewport edge. */
+.left-panel-stack > .voice-panel,
+.left-panel-stack > .help-card {
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
 }
 
 /* The connection card takes the remaining left-column height. */
@@ -77,10 +86,10 @@
  */
 @media (max-width: 1040px) and (min-width: 701px) {
   :root {
-    --goten-side-gutter: 14px;
-    --goten-side-width: min(320px, calc(50vw - 21px));
-    --goten-panel-top-gap: 18px;
-    --goten-panel-bottom-gap: 14px;
+    --goten-side-gutter: 0px;
+    --goten-side-width: min(300px, calc(50vw - 8px));
+    --goten-panel-top-gap: 14px;
+    --goten-panel-bottom-gap: 0px;
   }
 
   .game-panel {
@@ -104,22 +113,32 @@
 
   .house-chat {
     top: 92px;
-    right: 10px;
+    right: 0;
     bottom: auto;
-    left: 10px;
+    left: 0;
     width: auto;
     height: min(30vh, 250px);
     max-height: min(30vh, 250px);
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
   }
 
   .left-panel-stack {
     top: auto;
-    right: 10px;
-    bottom: 10px;
-    left: 10px;
+    right: 0;
+    bottom: 0;
+    left: 0;
     width: auto;
     height: min(50vh, 430px);
     max-height: min(50vh, 430px);
+  }
+
+  .left-panel-stack > .voice-panel,
+  .left-panel-stack > .help-card {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
   }
 
   .voice-panel {
