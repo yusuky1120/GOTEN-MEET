@@ -21,12 +21,12 @@ import { dispatchRemotePlayerDistance } from './playerDistanceEvents';
 
 const REMOTE_DEPTH = 40_000;
 const REMOTE_LABEL_DEPTH = 40_001;
+const REMOTE_NAME_OFFSET_Y = -32;
 
 type RemotePlayerView = {
   sprite: Phaser.GameObjects.Sprite;
   shadow: Phaser.GameObjects.Ellipse;
   nameLabel: Phaser.GameObjects.Text;
-  roomLabel: Phaser.GameObjects.Text;
   targetX: number;
   targetY: number;
   direction: PlayerDirection;
@@ -166,7 +166,7 @@ export class RemotePlayersManager {
       );
       // Do NOT setTint — clothing color comes from palette-swapped textures.
       const nameLabel = this.scene.add
-        .text(position.x, position.y - 39, labelText, {
+        .text(position.x, position.y + REMOTE_NAME_OFFSET_Y, labelText, {
           fontFamily: 'sans-serif',
           fontSize: '11px',
           color: '#17301c',
@@ -174,21 +174,11 @@ export class RemotePlayersManager {
           padding: { x: 5, y: 2 },
         })
         .setOrigin(0.5);
-      const roomLabel = this.scene.add
-        .text(position.x, position.y - 24, position.mapRoomName ?? '', {
-          fontFamily: 'sans-serif',
-          fontSize: '9px',
-          color: '#3a4634',
-          backgroundColor: 'rgba(245,239,220,.72)',
-          padding: { x: 4, y: 1 },
-        })
-        .setOrigin(0.5);
 
       const view: RemotePlayerView = {
         sprite,
         shadow,
         nameLabel,
-        roomLabel,
         targetX: position.x,
         targetY: position.y,
         direction: position.direction,
@@ -217,7 +207,6 @@ export class RemotePlayersManager {
     existing.clothingVariant = clothingVariant;
     existing.avatarType = avatarType;
     existing.nameLabel.setText(labelText);
-    existing.roomLabel.setText(position.mapRoomName ?? '');
 
     if (wasMoving && !position.moving) {
       existing.lastDistanceEmitAt = 0;
@@ -230,7 +219,6 @@ export class RemotePlayersManager {
     view.sprite.destroy();
     view.shadow.destroy();
     view.nameLabel.destroy();
-    view.roomLabel.destroy();
     this.views.delete(identity);
   }
 
@@ -256,7 +244,8 @@ export class RemotePlayersManager {
       .setPosition(view.sprite.x, view.sprite.y + 19)
       .setDepth(REMOTE_DEPTH - 1);
     view.sprite.setDepth(REMOTE_DEPTH);
-    view.nameLabel.setPosition(view.sprite.x, view.sprite.y - 39).setDepth(REMOTE_LABEL_DEPTH);
-    view.roomLabel.setPosition(view.sprite.x, view.sprite.y - 24).setDepth(REMOTE_LABEL_DEPTH);
+    view.nameLabel
+      .setPosition(view.sprite.x, view.sprite.y + REMOTE_NAME_OFFSET_Y)
+      .setDepth(REMOTE_LABEL_DEPTH);
   }
 }
