@@ -13,10 +13,11 @@ Phaser上で間取り・壁・家具を直接描画する、2D俯瞰型シェア
 - マップ部屋に連動する Voice Room でのマイク音声
 - 同じ Voice Room 内での距離に応じた受信音量減衰
 - participant identity に応じた服色（肌・髪・目は元色のまま）
+- Presence Room を使った家全体チャット（ブラウザメモリのみ、最大140文字、最大100件、永続化なし）
 
-マップ上の表示名（例: リビング）と LiveKit Voice room 名（例: `living-room`）は分離しています。「マップの部屋と音声を連動する」を ON にすると、キャラクターの現在地に応じて Voice Room だけが切り替わります。Presence Room（`goten-presence`）は接続中ずっと維持されます。
+マップ上の表示名（例: リビング）と LiveKit Voice room 名（例: `living-room`）は分離しています。「マップの部屋と音声を連動する」を ON にすると、キャラクターの現在地に応じて Voice Room だけが切り替わります。Presence Room（`goten-presence`）は接続中ずっと維持されます。キッチンと廊下は共通の Voice Room（`kitchen-hallway`）を共有します。チャットも Presence Room 経由のため、Voice Room が異なっていても届きます。
 
-テキスト入力欄（表示名など）にフォーカスがある間は、WASD / 矢印キーによるキャラクター移動を行いません。
+テキスト入力欄（表示名・チャットなど）にフォーカスがある間は、WASD / 矢印キーによるキャラクター移動を行いません。
 
 ## 通信構成
 
@@ -24,10 +25,12 @@ Phaser上で間取り・壁・家具を直接描画する、2D俯瞰型シェア
 Presence Room (goten-presence)
   全ユーザーが接続中ずっと参加
   座標・向き・移動状態・マップ部屋・Voice room 名を共有
+  家全体チャット（Text Streams / topic: goten.house-chat.v1）
   音声は publish しない
 
-Voice Room (kitchen / hallway / living-room / work-room / entrance)
+Voice Room (kitchen-hallway / living-room / work-room / entrance)
   現在のマップ部屋に応じて切り替え
+  キッチンと廊下は kitchen-hallway を共有
   マイク音声だけを publish
 ```
 
@@ -35,7 +38,10 @@ Voice Room (kitchen / hallway / living-room / work-room / entrance)
 - 同じ Voice Room にいる場合だけ音声が聞こえる
 - Voice Room を切り替えても remote player は削除されない
 - Presence から切断／退出したユーザーだけがマップから消える
-
+- チャットはサーバー／DBへ保存しない。ページ再読み込みや後からの参加者への履歴配信はない
+- Voice Room 切り替え中も同一 Presence session ならチャット履歴はブラウザ内で維持される（最大100件）
+- 明示的な Presence 退出後はチャット履歴をクリアする
+- 「永続掲示板・日記」は今回の対象外
 ## 必要環境
 
 - Node.js 20以上
@@ -262,6 +268,6 @@ npm run check
 
 1. 実際の家に合わせた間取り・家具位置の微調整
 2. 左右パンニングや立体音響
-3. 部屋チャットと家全体チャット
-4. ユーザー認証と本番向け identity 管理
-5. デプロイ（Workers / Pages / LiveKit Cloud）
+3. ユーザー認証と本番向け identity 管理
+4. デプロイ（Workers / Pages / LiveKit Cloud）
+5. 永続掲示板・日記（今回のリアルタイムチャットとは別）
