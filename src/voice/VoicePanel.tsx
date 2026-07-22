@@ -520,16 +520,7 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
   }
 
   return (
-    <div className="realtime-panel-stack">
-      <HouseChatPanel
-        presenceConnected={presenceConnected}
-        messages={chatMessages}
-        sending={chatSending}
-        error={chatError}
-        onClearError={() => setChatError(null)}
-        onSend={handleSendChat}
-      />
-
+    <>
       <aside className="voice-panel" aria-label="Voice chat">
       <div className="voice-panel__header">
         <h2>接続（Presence + Voice）</h2>
@@ -714,7 +705,16 @@ export default function VoicePanel({ currentMapRoom }: VoicePanelProps) {
 
       <div ref={audioContainerRef} className="voice-audio-container" aria-hidden="true" />
     </aside>
-    </div>
+
+      <HouseChatPanel
+        presenceConnected={presenceConnected}
+        messages={chatMessages}
+        sending={chatSending}
+        error={chatError}
+        onClearError={() => setChatError(null)}
+        onSend={handleSendChat}
+      />
+    </>
   );
 }
 
