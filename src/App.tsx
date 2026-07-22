@@ -129,20 +129,22 @@ export default function App() {
         <div ref={gameRootRef} className="game-root" />
       </section>
 
-      <aside className="help-card">
-        <h2>操作方法</h2>
-        <p><kbd>WASD</kbd> または <kbd>矢印キー</kbd> で移動</p>
-        <p><kbd>E</kbd> 近くの椅子・ソファに座る／立つ</p>
-        <p><kbd>Esc</kbd> 着席確認を閉じる／立つ</p>
-        <p>壁・家具には当たり判定があります。</p>
-        <div className="legend">
-          <span><i className="legend-dot room" />部屋</span>
-          <span><i className="legend-dot hall" />廊下</span>
-          <span><i className="legend-dot avatar" />あなた</span>
-        </div>
-      </aside>
+      <div className="left-panel-stack">
+        <VoicePanel currentMapRoom={roomName} />
 
-      <VoicePanel currentMapRoom={roomName} />
+        <aside className="help-card">
+          <h2>操作方法</h2>
+          <p><kbd>WASD</kbd> または <kbd>矢印キー</kbd> で移動</p>
+          <p><kbd>E</kbd> 近くの椅子・ソファに座る／立つ</p>
+          <p><kbd>Esc</kbd> 着席確認を閉じる／立つ</p>
+          <p>壁・家具には当たり判定があります。</p>
+          <div className="legend">
+            <span><i className="legend-dot room" />部屋</span>
+            <span><i className="legend-dot hall" />廊下</span>
+            <span><i className="legend-dot avatar" />あなた</span>
+          </div>
+        </aside>
+      </div>
     </main>
   );
 }
