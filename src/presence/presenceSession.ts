@@ -2,12 +2,16 @@ import {
   Room,
   RoomEvent,
   type RemoteParticipant,
+  type TextStreamHandler,
 } from 'livekit-client';
 import {
   dispatchRemotePlayerPosition,
   dispatchRemotePlayerRemove,
   dispatchRemotePlayersClear,
 } from '../game/gamePositionEvents';
+import { HOUSE_CHAT_TOPIC, HOUSE_CHAT_VERSION } from '../chat/chatConstants';
+import { readBoundedHouseChatText } from '../chat/chatStream';
+import type { IncomingHouseChatPayload } from '../chat/chatTypes';
 import {
   PLAYER_PRESENCE_TOPIC,
   PRESENCE_ROOM_NAME,
@@ -24,6 +28,8 @@ import type { LocalPresenceState, PresenceSessionSnapshot } from './presenceType
 
 export type PresenceSessionListener = (snapshot: PresenceSessionSnapshot) => void;
 
+export type PresenceChatListener = (payload: IncomingHouseChatPayload) => void;
+
 function toPublishableBytes(data: Uint8Array): Uint8Array<ArrayBuffer> {
   const copy = new Uint8Array(data.byteLength);
   copy.set(data);
@@ -33,6 +39,8 @@ function toPublishableBytes(data: Uint8Array): Uint8Array<ArrayBuffer> {
 export class PresenceSession {
   private room: Room | null = null;
   private listeners = new Set<PresenceSessionListener>();
+  private chatListeners = new Set<PresenceChatListener>();
+  private textStreamRoom: Room | null = null;
   private status: PresenceSessionSnapshot['status'] = 'disconnected';
   private participantIdentity: string | null = null;
   private participantName = '';
@@ -105,11 +113,48 @@ export class PresenceSession {
     }
   };
 
+  private readonly onTextStream: TextStreamHandler = (reader, participantInfo) => {
+    const generation = this.generation;
+    void (async () => {
+      try {
+        const text = await readBoundedHouseChatText(reader);
+        if (text === null) return;
+        if (generation !== this.generation) return;
+        if (!this.room || this.status !== 'connected') return;
+
+        const identity = participantInfo.identity?.trim() ?? '';
+        if (!identity) return;
+
+        const payload: IncomingHouseChatPayload = {
+          id: reader.info.id,
+          participantIdentity: identity,
+          participantName: this.resolveParticipantName(identity),
+          text,
+          sentAt: reader.info.timestamp,
+          attributes: reader.info.attributes,
+        };
+
+        for (const listener of this.chatListeners) {
+          listener(payload);
+        }
+      } catch {
+        // Ignore malformed chat streams; do not affect presence connection.
+      }
+    })();
+  };
+
   subscribe(listener: PresenceSessionListener): () => void {
     this.listeners.add(listener);
     listener(this.getSnapshot());
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+
+  subscribeChat(listener: PresenceChatListener): () => void {
+    this.chatListeners.add(listener);
+    return () => {
+      this.chatListeners.delete(listener);
     };
   }
 
@@ -151,17 +196,20 @@ export class PresenceSession {
     try {
       await room.connect(options.serverUrl, options.presenceToken);
       if (generation !== this.generation) {
+        this.unregisterTextStream(room);
         this.unbind(room);
         await room.disconnect();
         return;
       }
       this.room = room;
+      this.registerTextStream(room);
       this.status = 'connected';
       this.positionSyncStatus = 'syncing';
       this.startWatchdog();
       this.emit();
       void this.publishSnapshot();
     } catch (error) {
+      this.unregisterTextStream(room);
       this.unbind(room);
       try {
         await room.disconnect();
@@ -174,6 +222,33 @@ export class PresenceSession {
       this.emit();
       throw error;
     }
+  }
+
+  /**
+   * Send house chat over Presence Text Streams.
+   * Failures must not disconnect Presence.
+   */
+  async sendChatText(text: string): Promise<{ id: string; sentAt: number }> {
+    if (!this.room || this.status !== 'connected') {
+      throw new Error('Presence未接続のため送信できません。');
+    }
+
+    const generation = this.generation;
+    const info = await this.room.localParticipant.sendText(text, {
+      topic: HOUSE_CHAT_TOPIC,
+      attributes: {
+        version: HOUSE_CHAT_VERSION,
+      },
+    });
+
+    if (generation !== this.generation) {
+      throw new Error('Operation cancelled');
+    }
+
+    return {
+      id: info.id,
+      sentAt: info.timestamp,
+    };
   }
 
   async publishPresence(state: LocalPresenceState): Promise<void> {
@@ -223,6 +298,7 @@ export class PresenceSession {
     this.room = null;
     this.stopWatchdog();
     if (room) {
+      this.unregisterTextStream(room);
       this.unbind(room);
       try {
         await room.disconnect();
@@ -242,7 +318,40 @@ export class PresenceSession {
 
   dispose(): void {
     void this.disconnect();
+    this.chatListeners.clear();
     this.listeners.clear();
+  }
+
+  private registerTextStream(room: Room): void {
+    if (this.textStreamRoom === room) return;
+
+    if (this.textStreamRoom) {
+      this.unregisterTextStream(this.textStreamRoom);
+    }
+
+    room.registerTextStreamHandler(HOUSE_CHAT_TOPIC, this.onTextStream);
+    this.textStreamRoom = room;
+  }
+
+  private unregisterTextStream(room: Room | null): void {
+    if (!room || this.textStreamRoom !== room) {
+      return;
+    }
+    try {
+      room.unregisterTextStreamHandler(HOUSE_CHAT_TOPIC);
+    } catch {
+      // ignore
+    }
+    this.textStreamRoom = null;
+  }
+
+  private resolveParticipantName(identity: string): string {
+    if (!this.room) return identity;
+    if (this.room.localParticipant.identity === identity) {
+      return this.room.localParticipant.name || this.participantName || identity;
+    }
+    const remote = this.room.remoteParticipants.get(identity);
+    return remote?.name || identity;
   }
 
   private async publishSnapshot(destinationIdentities?: string[]): Promise<void> {
@@ -339,7 +448,10 @@ export class PresenceSession {
     this.stopWatchdog();
     const room = this.room;
     this.room = null;
-    if (room) this.unbind(room);
+    if (room) {
+      this.unregisterTextStream(room);
+      this.unbind(room);
+    }
   }
 
   private countOnline(): number {
