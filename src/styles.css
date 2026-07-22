@@ -94,11 +94,10 @@ h1 {
 }
 
 .help-card {
-  position: fixed;
-  left: 24px;
-  bottom: 22px;
-  z-index: 60;
-  max-width: 380px;
+  position: static;
+  width: 100%;
+  max-width: none;
+  flex: 0 0 auto;
   padding: 14px 16px;
   border: 1px solid rgba(255, 255, 255, .14);
   border-radius: 14px;
@@ -127,27 +126,25 @@ kbd {
 .legend-dot.hall { background: #b3a886; }
 .legend-dot.avatar { background: #3f6d8a; }
 
-.realtime-panel-stack {
+.left-panel-stack {
   position: fixed;
-  right: 24px;
+  left: 24px;
   bottom: 22px;
   z-index: 60;
-  width: min(340px, calc(100vw - 48px));
-  max-height: calc(100vh - 110px);
+  width: min(380px, calc(100vw - 48px));
+  max-height: calc(100vh - 130px);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  pointer-events: none;
-}
-
-.realtime-panel-stack > * {
-  pointer-events: auto;
+  overflow: hidden;
 }
 
 .voice-panel {
-  flex: 0 0 auto;
-  max-height: min(42vh, 420px);
-  overflow: auto;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(52vh, 500px);
+  overflow-y: auto;
   padding: 14px 16px;
   border: 1px solid rgba(255, 255, 255, .14);
   border-radius: 14px;
@@ -272,9 +269,13 @@ kbd {
 }
 
 .house-chat {
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: min(38vh, 320px);
+  position: fixed;
+  right: 24px;
+  bottom: 22px;
+  z-index: 60;
+  width: min(380px, calc(100vw - 48px));
+  height: min(520px, calc(100vh - 140px));
+  max-height: calc(100vh - 140px);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -289,6 +290,12 @@ kbd {
 .house-chat__header h2 {
   margin: 0 0 2px;
   font-size: 15px;
+}
+
+.house-chat__header,
+.house-chat__composer,
+.house-chat__hint {
+  flex: 0 0 auto;
 }
 
 .house-chat__status {
@@ -306,8 +313,8 @@ kbd {
 
 .house-chat__list {
   flex: 1 1 auto;
-  min-height: 96px;
-  overflow: auto;
+  min-height: 120px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -383,27 +390,32 @@ kbd {
   .status-card { min-width: 112px; padding: 9px 12px; }
   .status-card strong { font-size: 15px; }
   .game-panel { inset: 82px 0 0; }
-  .help-card {
-    left: 10px;
-    right: auto;
-    bottom: auto;
-    top: 92px;
-    max-width: calc(100vw - 20px);
-    padding: 10px 12px;
-  }
-  .help-card p { font-size: 11px; }
   .legend { display: none; }
-  .realtime-panel-stack {
+
+  .house-chat {
+    left: 10px;
+    right: 10px;
+    top: 92px;
+    bottom: auto;
+    width: auto;
+    height: auto;
+    max-height: 30vh;
+  }
+
+  .left-panel-stack {
     left: 10px;
     right: 10px;
     bottom: 10px;
     width: auto;
-    max-height: calc(100vh - 100px);
+    max-height: 52vh;
   }
-  .house-chat {
-    max-height: min(34vh, 260px);
-  }
+
   .voice-panel {
-    max-height: min(40vh, 360px);
+    max-height: 34vh;
   }
+
+  .help-card {
+    padding: 10px 12px;
+  }
+  .help-card p { font-size: 11px; }
 }
