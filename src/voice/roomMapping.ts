@@ -3,8 +3,8 @@
  * to LiveKit room names. Only names that actually appear in the map are listed.
  */
 export const MAP_ROOM_TO_LIVEKIT_ROOM = {
-  キッチン: 'kitchen',
-  廊下: 'hallway',
+  キッチン: 'kitchen-hallway',
+  廊下: 'kitchen-hallway',
   リビング: 'living-room',
   作業部屋: 'work-room',
   玄関: 'entrance',
