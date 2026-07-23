@@ -6,6 +6,7 @@ import GameHelpPopover from './controls/GameHelpPopover';
 import MicrophoneButton from './controls/MicrophoneButton';
 import './controls/gameControls.css';
 import { createGameConfig } from './game/houseGame2';
+import { installPhaserKeyboardCaptureSync } from './game/phaserKeyboardCapture';
 import JoinOverlay from './onboarding/JoinOverlay';
 import {
   didPresenceDisconnect,
@@ -58,6 +59,7 @@ export default function App() {
 
     window.addEventListener('goten:room-change', onRoomChange);
     const game = new Phaser.Game(createGameConfig(gameRootRef.current));
+    const removeKeyboardCaptureSync = installPhaserKeyboardCaptureSync(game);
 
     let labelsRemoved = false;
     let mapTweaksApplied = false;
@@ -143,6 +145,7 @@ export default function App() {
     return () => {
       window.removeEventListener('goten:room-change', onRoomChange);
       game.events.off(Phaser.Core.Events.POST_STEP, finalizeMap);
+      removeKeyboardCaptureSync();
       game.destroy(true);
     };
   }, []);
