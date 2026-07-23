@@ -8,12 +8,22 @@ import { isTextEntryFocused } from './isTextEntryFocused';
  */
 export function installPhaserKeyboardCaptureSync(game: Phaser.Game): () => void {
   let pendingFrame: number | null = null;
+  let disposed = false;
 
   const sync = () => {
     pendingFrame = null;
-    const allowBrowserTextInput = isTextEntryFocused();
+    if (disposed) return;
 
-    for (const scene of game.scene.getScenes(true)) {
+    const activeScenes = game.scene.getScenes(true);
+    if (activeScenes.length === 0) {
+      // JoinOverlay may autofocus before Phaser has finished starting its Scene.
+      // Retry until the keyboard plugin exists, while preserving the current focus.
+      pendingFrame = requestAnimationFrame(sync);
+      return;
+    }
+
+    const allowBrowserTextInput = isTextEntryFocused();
+    for (const scene of activeScenes) {
       const keyboard = scene.input.keyboard;
       if (!keyboard) continue;
 
@@ -32,15 +42,19 @@ export function installPhaserKeyboardCaptureSync(game: Phaser.Game): () => void 
     pendingFrame = requestAnimationFrame(sync);
   };
 
+  const onFocusIn = () => sync();
+  const onFocusOut = () => scheduleSync();
+
   // focusin handles the newly focused input immediately. focusout is deferred
   // until document.activeElement points at the next element.
-  document.addEventListener('focusin', sync, true);
-  document.addEventListener('focusout', scheduleSync, true);
+  document.addEventListener('focusin', onFocusIn, true);
+  document.addEventListener('focusout', onFocusOut, true);
   sync();
 
   return () => {
-    document.removeEventListener('focusin', sync, true);
-    document.removeEventListener('focusout', scheduleSync, true);
+    disposed = true;
+    document.removeEventListener('focusin', onFocusIn, true);
+    document.removeEventListener('focusout', onFocusOut, true);
     if (pendingFrame !== null) {
       cancelAnimationFrame(pendingFrame);
     }
