@@ -97,6 +97,10 @@ assert(!appSource.includes('left-panel-stack'), 'left panel stack removed');
 assert(appSource.includes('shouldShowJoinOverlay'), 'App keeps modal through the Voice attempt');
 assert(appSource.includes('didPresenceDisconnect'), 'App detects unexpected Presence disconnect');
 assert(appSource.includes('session.leave()'), 'App cleans Voice/profile after Presence disconnect');
+assert(
+  appSource.includes('installPhaserKeyboardCaptureSync(game)'),
+  'App synchronizes Phaser key capture with DOM text focus',
+);
 
 const controlsIndex = appSource.indexOf('className="game-controls"');
 const micIndex = appSource.indexOf('<MicrophoneButton', controlsIndex);
@@ -120,6 +124,13 @@ const joinOverlay = readFileSync(resolve('src/onboarding/JoinOverlay.tsx'), 'utf
 assert(joinOverlay.includes('参加する'), 'join button present');
 assert(!joinOverlay.includes('Presenceへ接続'), 'no Presence jargon on join');
 assert(!joinOverlay.includes('Voiceへ接続'), 'no Voice jargon on join');
+
+const captureSource = readFileSync(resolve('src/game/phaserKeyboardCapture.ts'), 'utf8');
+assert(captureSource.includes('isTextEntryFocused()'), 'capture sync uses the shared text-focus check');
+assert(captureSource.includes('disableGlobalCapture()'), 'text focus disables Phaser key capture');
+assert(captureSource.includes('enableGlobalCapture()'), 'blur restores Phaser key capture');
+assert(captureSource.includes("addEventListener('focusin'"), 'focusin is observed');
+assert(captureSource.includes("addEventListener('focusout'"), 'focusout is observed');
 
 const remoteSource = readFileSync(resolve('src/game/remotePlayers.ts'), 'utf8');
 assert(!remoteSource.includes('roomLabel'), 'remote room label is not rendered');
