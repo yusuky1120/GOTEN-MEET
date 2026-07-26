@@ -51,7 +51,7 @@ try {
   assert(sessionResponse.status === 200, 'session proxy returns upstream response');
   assert(calls[0]?.url === 'https://token.example.test/api/livekit/session', 'session target URL');
   assert(calls[0]?.method === 'POST', 'session method preserved');
-  assert(calls[0]?.origin === 'https://goten.example', 'session origin preserved');
+  assert(calls[0]?.origin === null, 'browser origin is removed before Worker forwarding');
   assert(calls[0]?.body.includes('alice'), 'session body preserved');
 
   const voiceResponse = await handleVoiceToken({
@@ -72,6 +72,7 @@ try {
 
   assert(voiceResponse.status === 200, 'voice proxy returns upstream response');
   assert(calls[1]?.url === 'https://token.example.test/api/livekit/voice-token', 'voice target URL');
+  assert(calls[1]?.origin === null, 'voice proxy removes browser origin');
   assert(calls[1]?.body.includes('living-room'), 'voice body preserved');
 
   const beforeGet = calls.length;
