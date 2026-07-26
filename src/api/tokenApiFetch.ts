@@ -1,5 +1,6 @@
 import { setLocalParticipantIdentity } from '../game/seatOccupancy';
 
+const LIVEKIT_API_PATH_PREFIX = '/api/livekit/';
 const SESSION_PATH = '/api/livekit/session';
 
 function normalizeBaseUrl(value: string | undefined): string {
@@ -20,7 +21,11 @@ function rewriteApiInput(input: RequestInfo | URL, apiBaseUrl: string): RequestI
   if (!apiBaseUrl) return input;
 
   const url = toUrl(input);
-  if (!url || url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) {
+  if (
+    !url ||
+    url.origin !== window.location.origin ||
+    !url.pathname.startsWith(LIVEKIT_API_PATH_PREFIX)
+  ) {
     return input;
   }
 
