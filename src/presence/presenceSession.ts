@@ -79,9 +79,7 @@ export class PresenceSession {
     _kind?: unknown,
     topic?: string,
   ) => {
-    if (!participant) return;
-    if (this.status !== 'connected') return;
-
+    if (!participant || this.status !== 'connected') return;
     const message = decodePlayerPresencePayload(payload, topic);
     if (!message) return;
 
@@ -91,7 +89,6 @@ export class PresenceSession {
 
     const wasKnown = this.knownRemotes.has(participant.identity);
     this.knownRemotes.add(participant.identity);
-
     dispatchRemotePlayerPosition({
       participantIdentity: participant.identity,
       participantName: participant.name || participant.identity,
@@ -105,7 +102,6 @@ export class PresenceSession {
       mapRoomName: message.mapRoomName,
       voiceRoomName: message.voiceRoomName,
     });
-
     if (!wasKnown) this.emit();
   };
 
@@ -118,7 +114,6 @@ export class PresenceSession {
         if (!this.room || this.status !== 'connected') return;
         const identity = participantInfo.identity?.trim() ?? '';
         if (!identity) return;
-
         const payload: IncomingHouseChatPayload = {
           id: reader.info.id,
           participantIdentity: identity,
@@ -168,7 +163,6 @@ export class PresenceSession {
     if (this.room || this.status === 'connecting' || this.status === 'connected') {
       throw new Error('Presence already connected or connecting');
     }
-
     this.status = 'connecting';
     this.errorMessage = null;
     this.participantIdentity = options.participantIdentity;
@@ -179,7 +173,6 @@ export class PresenceSession {
     const generation = ++this.generation;
     const room = new Room({ adaptiveStream: true, dynacast: true });
     this.bind(room);
-
     try {
       await room.connect(options.serverUrl, options.presenceToken);
       if (generation !== this.generation) {
@@ -326,10 +319,17 @@ export class PresenceSession {
     this.emit();
   }
 
+  /** Presence membership, not packet age, owns remote-player lifetime. */
   private startWatchdog(): void {
     this.stopWatchdog();
     this.watchdog = setInterval(() => {
-      if (this.status === 'connected') void this.publishSnapshot();
+      if (!this.room || this.status !== 'connected') return;
+      for (const identity of [...this.knownRemotes]) {
+        if (!this.room.remoteParticipants.has(identity)) {
+          this.forgetRemote(identity);
+        }
+      }
+      void this.publishSnapshot();
     }, 5_000);
   }
 
