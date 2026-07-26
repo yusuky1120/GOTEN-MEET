@@ -1,3 +1,5 @@
+import type { AvatarModel } from '../game/playerClothing';
+
 export type PlayerDirection = 'up' | 'down' | 'left' | 'right';
 
 export const PLAYER_DIRECTIONS: readonly PlayerDirection[] = [
@@ -17,6 +19,7 @@ export type LocalPlayerPosition = {
 export type RemotePlayerPosition = {
   participantIdentity: string;
   participantName: string;
+  avatarModel: AvatarModel;
   x: number;
   y: number;
   direction: PlayerDirection;
