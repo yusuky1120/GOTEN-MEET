@@ -43,7 +43,7 @@ export function findSeatKeyAtPosition(
 export function selectSeatOwner(identities: readonly string[]): string | null {
   const candidates = [...new Set(identities.map((value) => value.trim()).filter(Boolean))];
   if (candidates.length === 0) return null;
-  candidates.sort((left, right) => left.localeCompare(right));
+  candidates.sort();
   return candidates[0] ?? null;
 }
 
