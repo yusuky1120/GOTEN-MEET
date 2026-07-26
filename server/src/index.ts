@@ -26,6 +26,6 @@ serve(
   (info) => {
     console.log(`GOTEN MEET token server listening on http://localhost:${info.port}`);
     console.log(`LiveKit URL: ${config.livekitUrl}`);
-    console.log(`LiveKit API Key: ${config.livekitApiKey}`);
+    console.log('LiveKit API credentials: configured');
   },
 );
