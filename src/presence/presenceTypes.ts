@@ -1,3 +1,4 @@
+import type { AvatarModel } from '../game/playerClothing';
 import type { PlayerDirection } from '../realtime/playerPositionTypes';
 
 export type PresenceConnectionStatus =
@@ -9,6 +10,7 @@ export type PresenceConnectionStatus =
 export type PlayerPresenceMessage = {
   type: 'player-presence';
   version: 2;
+  avatarModel: AvatarModel;
   x: number;
   y: number;
   direction: PlayerDirection;
@@ -20,6 +22,7 @@ export type PlayerPresenceMessage = {
 };
 
 export type LocalPresenceState = {
+  avatarModel: AvatarModel;
   x: number;
   y: number;
   direction: PlayerDirection;
