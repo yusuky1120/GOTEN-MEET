@@ -54,7 +54,7 @@ export function installSeatOccupancy(game: Phaser.Game): () => void {
   const occupancy = new RemoteSeatOccupancy();
   const lastRemotePositions = new Map<string, LastRemotePosition>();
   let scene: HouseSceneRuntime | null = null;
-  let originalSit: HouseSceneRuntime['sit'] = null;
+  let originalSit: ((seat: RuntimeSeat) => void) | null = null;
   let notice: Phaser.GameObjects.Text | null = null;
   let noticeGeneration = 0;
 
