@@ -14,6 +14,7 @@ function assert(condition: boolean, message: string): void {
 }
 
 const state: LocalPresenceState = {
+  avatarModel: 'female',
   x: 100,
   y: 200,
   direction: 'down',
@@ -26,11 +27,30 @@ const encoded = encodePlayerPresenceMessage(state, { sequence: 3, sentAt: 1_700_
 const decoded = decodePlayerPresencePayload(encoded, PLAYER_PRESENCE_TOPIC);
 assert(decoded !== null, 'valid payload decodes');
 assert(decoded!.version === 2, 'version 2');
+assert(decoded!.avatarModel === 'female', 'avatarModel preserved');
 assert(decoded!.voiceRoomName === 'kitchen', 'voiceRoomName preserved');
 assert(decoded!.mapRoomName === 'リビング', 'mapRoomName preserved');
 assert(decoded!.sequence === 3, 'sequence preserved');
 
-// Different voice room must still be accepted (no room filter in codec).
+const legacyPayload = new TextEncoder().encode(
+  JSON.stringify({
+    type: 'player-presence',
+    version: 2,
+    x: 10,
+    y: 20,
+    direction: 'down',
+    moving: false,
+    mapRoomName: null,
+    voiceRoomName: null,
+    sequence: 1,
+    sentAt: 1,
+  }),
+);
+assert(
+  decodePlayerPresencePayload(legacyPayload, PLAYER_PRESENCE_TOPIC)?.avatarModel === 'male',
+  'legacy payload defaults to male model',
+);
+
 const otherRoom = encodePlayerPresenceMessage(
   { ...state, voiceRoomName: 'hallway' },
   { sequence: 4, sentAt: 1_700_000_000_001 },
@@ -40,14 +60,13 @@ assert(
   'different voiceRoomName still accepted',
 );
 
-// Reject wrong topic
 assert(decodePlayerPresencePayload(encoded, 'goten.player-position.v1') === null, 'old topic rejected');
 
-// Reject bad coordinates
 const badCoords = new TextEncoder().encode(
   JSON.stringify({
     type: 'player-presence',
     version: 2,
+    avatarModel: 'male',
     x: 999_999,
     y: 0,
     direction: 'up',
@@ -60,11 +79,11 @@ const badCoords = new TextEncoder().encode(
 );
 assert(decodePlayerPresencePayload(badCoords, PLAYER_PRESENCE_TOPIC) === null, 'bad coords rejected');
 
-// Reject old version
 const oldVersion = new TextEncoder().encode(
   JSON.stringify({
     type: 'player-presence',
     version: 1,
+    avatarModel: 'male',
     x: 1,
     y: 2,
     direction: 'up',
@@ -77,7 +96,6 @@ const oldVersion = new TextEncoder().encode(
 );
 assert(decodePlayerPresencePayload(oldVersion, PLAYER_PRESENCE_TOPIC) === null, 'old version rejected');
 
-// Sequence duplicate check (mirrors PresenceSession accept rule).
 function shouldAcceptSequence(previous: number | undefined, next: number): boolean {
   if (previous !== undefined && next <= previous) return false;
   return true;
