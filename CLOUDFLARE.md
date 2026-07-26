@@ -1,36 +1,43 @@
 # Cloudflare Workers / Pages deployment
 
-The repository now contains a Cloudflare Workers entry point for the existing LiveKit token API. The local Node server remains available and unchanged for `npm run dev:app`.
+The repository contains a Cloudflare Workers entry point for the LiveKit token API. The original frontend and local Node/Hono development flow remain unchanged.
 
-## Added runtime layout
+## Runtime layout
 
 ```text
 Cloudflare Pages
   React / Phaser frontend
         |
-        | POST /api/livekit/session
-        | POST /api/livekit/voice-token
+        | same-origin POST /api/livekit/session
+        | same-origin POST /api/livekit/voice-token
         v
-Cloudflare Workers
+Cloudflare Pages Functions
+  thin proxy only
+        |
+        v
+Cloudflare Worker
   Hono token API
         |
         v
 LiveKit Cloud
 ```
 
-## What can be checked before obtaining LiveKit Cloud credentials
+The frontend keeps the original relative `/api/livekit/*` requests from commit `db772238`. It does not replace `window.fetch` and does not contain a Worker URL routing hook.
+
+## Worker checks before credentials
 
 ```bash
 cd server
 npm ci
 npm run typecheck
 npm run build
+npm run worker:test
 npm run worker:check
 ```
 
 `worker:check` bundles the Worker with Wrangler in dry-run mode and does not deploy it.
 
-The health route does not read LiveKit credentials:
+The health route does not require LiveKit credentials:
 
 ```bash
 cd server
@@ -44,7 +51,7 @@ Expected response:
 {"status":"ok","runtime":"cloudflare-workers"}
 ```
 
-## Local Worker test with the local LiveKit server
+## Local Worker test with local LiveKit
 
 ```bash
 cp server/.dev.vars.example server/.dev.vars
@@ -53,18 +60,18 @@ cd server
 npm run worker:dev
 ```
 
-`server/.dev.vars` is ignored by Git. The checked-in example only contains the standard `livekit-server --dev` development credentials.
+`server/.dev.vars` is ignored by Git. The checked-in example contains only the standard `livekit-server --dev` credentials.
 
-## Values to add after creating the LiveKit Cloud project
+## Worker bindings
 
-The Worker expects these bindings:
+The Worker expects:
 
 - `LIVEKIT_URL`
 - `LIVEKIT_API_KEY`
 - `LIVEKIT_API_SECRET`
 - `ALLOWED_ORIGINS`
 
-Do not add the API secret to `wrangler.jsonc` or source files. From `server/`, set the values with Wrangler or the Cloudflare dashboard:
+Register them from `server/`:
 
 ```bash
 npx wrangler@4 secret put LIVEKIT_URL
@@ -73,59 +80,82 @@ npx wrangler@4 secret put LIVEKIT_API_SECRET
 npx wrangler@4 secret put ALLOWED_ORIGINS
 ```
 
-For `ALLOWED_ORIGINS`, enter the exact frontend origin without a trailing slash, for example:
+For `ALLOWED_ORIGINS`, use the exact Pages origin without a trailing slash:
 
 ```text
 https://goten-meet.pages.dev
 ```
 
-Multiple origins can be comma-separated while migrating between GitHub Pages and Cloudflare Pages.
+Multiple origins can be comma-separated.
 
 ## Deploy the Worker
-
-After the bindings are configured:
 
 ```bash
 cd server
 npm run worker:deploy
 ```
 
-Then verify:
+Verify:
 
 ```bash
-curl -i https://<worker-host>/health
+curl -i https://goten-meet-token-api.yusuky1120.workers.dev/health
 ```
 
-## Configure the frontend
+## Pages Functions proxy
 
-For Cloudflare Pages, configure these build variables:
+These files preserve the original frontend API contract:
 
 ```text
-VITE_TOKEN_API_BASE_URL=https://<worker-host>
+functions/api/livekit/session.js
+functions/api/livekit/voice-token.js
+```
+
+They forward same-origin Pages requests to the token Worker. The public Worker URL is used as the default. A Pages runtime variable can override it:
+
+```text
+TOKEN_API_BASE_URL=https://<worker-host>
+```
+
+This variable is not a secret. It is optional for the current deployment.
+
+## Build and deploy Pages
+
+Cloudflare Pages needs only the Vite base path at build time:
+
+```text
 VITE_BASE_PATH=/
 ```
 
-Build command:
+Build:
 
-```text
-npm run build
+```bash
+VITE_BASE_PATH=/ npm run build
 ```
 
-Output directory:
+Deploy from the repository root so Wrangler includes both `dist/` and the top-level `functions/` directory:
 
-```text
-dist
+```bash
+npx wrangler@4 pages deploy dist \
+  --project-name goten-meet \
+  --branch main
 ```
 
-For the existing GitHub Pages build, keep:
+For GitHub Pages, use:
 
 ```text
-VITE_TOKEN_API_BASE_URL=
 VITE_BASE_PATH=/GOTEN-MEET/
 ```
 
-When `VITE_TOKEN_API_BASE_URL` is empty, local development continues to use Vite's `/api` proxy and the Node token server on port 8787.
+Local development continues to use the Vite `/api` proxy and the Node token server on port 8787:
+
+```bash
+npm run dev:app
+```
 
 ## Security boundary
 
-The browser receives short-lived participant tokens only. LiveKit API credentials remain in Worker bindings and are never included in the frontend bundle. The Worker rejects browser requests whose `Origin` is not present in `ALLOWED_ORIGINS`.
+- The browser receives short-lived participant tokens only.
+- LiveKit API credentials remain in Worker bindings.
+- The frontend bundle does not contain the LiveKit API key or secret.
+- Pages Functions only proxy the two LiveKit token routes.
+- The Worker still validates `Origin` against `ALLOWED_ORIGINS`.
