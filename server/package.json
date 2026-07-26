@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js",
+    "worker:test": "tsx scripts/check-worker.ts",
     "worker:dev": "npx --yes wrangler@4 dev --config wrangler.jsonc",
     "worker:check": "npx --yes wrangler@4 deploy --dry-run --config wrangler.jsonc --outdir .wrangler/dry-run",
     "worker:deploy": "npx --yes wrangler@4 deploy --config wrangler.jsonc"
