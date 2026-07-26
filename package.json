@@ -16,7 +16,9 @@
     "check:house-chat": "npx tsx scripts/check-house-chat.ts",
     "check:room-mapping": "npx tsx scripts/check-room-mapping.ts",
     "check:seat-occupancy": "npx tsx scripts/check-seat-occupancy.ts",
-    "check": "npm run check:proximity && npm run check:clothing && npm run check:presence && npm run check:connection-errors && npm run check:remote-presence-policy && npm run check:house-chat && npm run check:room-mapping && npm run check:seat-occupancy"
+    "check:pages-token-proxy": "npx tsx scripts/check-pages-token-proxy.ts",
+    "check:onboarding-ui": "npx tsx scripts/check-onboarding-ui.ts",
+    "check": "npm run check:proximity && npm run check:clothing && npm run check:presence && npm run check:connection-errors && npm run check:remote-presence-policy && npm run check:house-chat && npm run check:room-mapping && npm run check:seat-occupancy && npm run check:pages-token-proxy && npm run check:onboarding-ui"
   },
   "dependencies": {
     "livekit-client": "^2.20.2",

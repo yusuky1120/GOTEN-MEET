@@ -9,8 +9,6 @@ import {
 import {
   RemoteSeatOccupancy,
   createSeatKey,
-  getLocalParticipantIdentity,
-  selectSeatOwner,
   type SeatDescriptor,
 } from './seatOccupancy';
 
@@ -44,11 +42,13 @@ function isHouseSceneRuntime(scene: Phaser.Scene): scene is HouseSceneRuntime {
 }
 
 /**
- * Adds multiplayer seat locking without changing the single-player map code.
+ * Adds one-participant-per-seat behavior while leaving the original HouseScene
+ * UI and connection flow untouched.
  *
- * A remote participant is considered seated only when their authoritative
- * Presence coordinates match a registered seat anchor. Normal movement cannot
- * reach those coordinates because seats are inside furniture colliders.
+ * Remote seat claims are derived from Presence coordinates. A normal movement
+ * position cannot match a seat anchor because the anchor is inside the furniture
+ * collider. When simultaneous claims are observed, the local client fails closed
+ * and stands up, so two avatars never remain on the same seat after Presence sync.
  */
 export function installSeatOccupancy(game: Phaser.Game): () => void {
   const occupancy = new RemoteSeatOccupancy();
@@ -85,23 +85,11 @@ export function installSeatOccupancy(game: Phaser.Game): () => void {
 
   const resolveLocalConflict = () => {
     if (!scene?.seated || !scene.standUp) return;
-
     const seatKey = createSeatKey(scene.seated);
-    const remoteOccupants = occupancy.occupants(seatKey);
-    if (remoteOccupants.length === 0) return;
+    if (!occupancy.isOccupied(seatKey)) return;
 
-    const localIdentity = getLocalParticipantIdentity();
-    const owner = selectSeatOwner(
-      localIdentity ? [localIdentity, ...remoteOccupants] : remoteOccupants,
-    );
-
-    // If the local identity is unavailable, fail closed and give the observed
-    // remote participant the seat. During a normal connected session the
-    // identity is captured before Presence connects.
-    if (!localIdentity || owner !== localIdentity) {
-      scene.standUp();
-      showNotice('この席はほかのユーザーが使用しています');
-    }
+    scene.standUp();
+    showNotice('この席はほかのユーザーが使用しています');
   };
 
   const syncRemotePosition = (position: LastRemotePosition) => {
@@ -157,7 +145,14 @@ export function installSeatOccupancy(game: Phaser.Game): () => void {
   window.addEventListener(REMOTE_PLAYER_REMOVE_EVENT, onRemoteRemove);
   window.addEventListener(REMOTE_PLAYERS_CLEAR_EVENT, onRemoteClear);
   game.events.on(Phaser.Core.Events.POST_STEP, tryAttach);
-  tryAttach();
+
+  try {
+    tryAttach();
+  } catch (error) {
+    console.warn('[seat-occupancy] attach skipped', {
+      message: error instanceof Error ? error.message : 'unknown error',
+    });
+  }
 
   return () => {
     window.removeEventListener(REMOTE_PLAYER_POSITION_EVENT, onRemotePosition);

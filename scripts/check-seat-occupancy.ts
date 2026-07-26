@@ -2,7 +2,6 @@ import {
   RemoteSeatOccupancy,
   createSeatKey,
   findSeatKeyAtPosition,
-  selectSeatOwner,
   type SeatDescriptor,
 } from '../src/game/seatOccupancy.ts';
 
@@ -36,16 +35,11 @@ assert(!occupancy.isOccupied(chairKey), 'moving away releases chair');
 
 occupancy.update(seats, { participantIdentity: 'remote-b', x: 300, y: 397 });
 occupancy.update(seats, { participantIdentity: 'remote-c', x: 300, y: 397 });
-assert(occupancy.occupants(sofaTopKey).length === 2, 'simultaneous claims are observed');
-assert(
-  selectSeatOwner(['remote-c', 'remote-b', 'remote-c']) === 'remote-b',
-  'simultaneous claims resolve deterministically',
-);
+assert(occupancy.occupants(sofaTopKey).length === 2, 'simultaneous remote claims are observed');
 
 occupancy.remove('remote-b');
 assert(occupancy.occupants(sofaTopKey).length === 1, 'participant removal releases only its claim');
 occupancy.clear();
 assert(!occupancy.isOccupied(sofaTopKey), 'clear releases all seats');
-assert(selectSeatOwner([]) === null, 'empty claim set has no owner');
 
 console.log('check-seat-occupancy: ok');

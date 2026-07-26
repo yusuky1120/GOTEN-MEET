@@ -27,7 +27,6 @@ import {
 import type { LocalPresenceState, PresenceSessionSnapshot } from './presenceTypes';
 
 export type PresenceSessionListener = (snapshot: PresenceSessionSnapshot) => void;
-
 export type PresenceChatListener = (payload: IncomingHouseChatPayload) => void;
 
 function toPublishableBytes(data: Uint8Array): Uint8Array<ArrayBuffer> {
@@ -80,24 +79,20 @@ export class PresenceSession {
     _kind?: unknown,
     topic?: string,
   ) => {
-    if (!participant) return;
-    if (this.status !== 'connected') return;
-
+    if (!participant || this.status !== 'connected') return;
     const message = decodePlayerPresencePayload(payload, topic);
     if (!message) return;
 
     const previous = this.lastAcceptedSequence.get(participant.identity);
-    if (previous !== undefined && message.sequence <= previous) {
-      return;
-    }
+    if (previous !== undefined && message.sequence <= previous) return;
     this.lastAcceptedSequence.set(participant.identity, message.sequence);
 
     const wasKnown = this.knownRemotes.has(participant.identity);
     this.knownRemotes.add(participant.identity);
-
     dispatchRemotePlayerPosition({
       participantIdentity: participant.identity,
       participantName: participant.name || participant.identity,
+      avatarModel: message.avatarModel,
       x: message.x,
       y: message.y,
       direction: message.direction,
@@ -107,10 +102,7 @@ export class PresenceSession {
       mapRoomName: message.mapRoomName,
       voiceRoomName: message.voiceRoomName,
     });
-
-    if (!wasKnown) {
-      this.emit();
-    }
+    if (!wasKnown) this.emit();
   };
 
   private readonly onTextStream: TextStreamHandler = (reader, participantInfo) => {
@@ -118,13 +110,10 @@ export class PresenceSession {
     void (async () => {
       try {
         const text = await readBoundedHouseChatText(reader);
-        if (text === null) return;
-        if (generation !== this.generation) return;
+        if (text === null || generation !== this.generation) return;
         if (!this.room || this.status !== 'connected') return;
-
         const identity = participantInfo.identity?.trim() ?? '';
         if (!identity) return;
-
         const payload: IncomingHouseChatPayload = {
           id: reader.info.id,
           participantIdentity: identity,
@@ -133,10 +122,7 @@ export class PresenceSession {
           sentAt: reader.info.timestamp,
           attributes: reader.info.attributes,
         };
-
-        for (const listener of this.chatListeners) {
-          listener(payload);
-        }
+        for (const listener of this.chatListeners) listener(payload);
       } catch {
         // Ignore malformed chat streams; do not affect presence connection.
       }
@@ -146,16 +132,12 @@ export class PresenceSession {
   subscribe(listener: PresenceSessionListener): () => void {
     this.listeners.add(listener);
     listener(this.getSnapshot());
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return () => this.listeners.delete(listener);
   }
 
   subscribeChat(listener: PresenceChatListener): () => void {
     this.chatListeners.add(listener);
-    return () => {
-      this.chatListeners.delete(listener);
-    };
+    return () => this.chatListeners.delete(listener);
   }
 
   getSnapshot(): PresenceSessionSnapshot {
@@ -181,7 +163,6 @@ export class PresenceSession {
     if (this.room || this.status === 'connecting' || this.status === 'connected') {
       throw new Error('Presence already connected or connecting');
     }
-
     this.status = 'connecting';
     this.errorMessage = null;
     this.participantIdentity = options.participantIdentity;
@@ -192,7 +173,6 @@ export class PresenceSession {
     const generation = ++this.generation;
     const room = new Room({ adaptiveStream: true, dynacast: true });
     this.bind(room);
-
     try {
       await room.connect(options.serverUrl, options.presenceToken);
       if (generation !== this.generation) {
@@ -211,11 +191,7 @@ export class PresenceSession {
     } catch (error) {
       this.unregisterTextStream(room);
       this.unbind(room);
-      try {
-        await room.disconnect();
-      } catch {
-        // ignore
-      }
+      try { await room.disconnect(); } catch { /* ignore */ }
       this.status = 'error';
       this.positionSyncStatus = 'error';
       this.errorMessage = error instanceof Error ? error.message : 'Presence connect failed';
@@ -224,46 +200,27 @@ export class PresenceSession {
     }
   }
 
-  /**
-   * Send house chat over Presence Text Streams.
-   * Failures must not disconnect Presence.
-   */
   async sendChatText(text: string): Promise<{ id: string; sentAt: number }> {
     if (!this.room || this.status !== 'connected') {
       throw new Error('Presence未接続のため送信できません。');
     }
-
     const generation = this.generation;
     const info = await this.room.localParticipant.sendText(text, {
       topic: HOUSE_CHAT_TOPIC,
-      attributes: {
-        version: HOUSE_CHAT_VERSION,
-      },
+      attributes: { version: HOUSE_CHAT_VERSION },
     });
-
-    if (generation !== this.generation) {
-      throw new Error('Operation cancelled');
-    }
-
-    return {
-      id: info.id,
-      sentAt: info.timestamp,
-    };
+    if (generation !== this.generation) throw new Error('Operation cancelled');
+    return { id: info.id, sentAt: info.timestamp };
   }
 
   async publishPresence(state: LocalPresenceState): Promise<void> {
     this.lastState = state;
     if (!this.room || this.status !== 'connected') return;
-
     const generation = this.generation;
     this.sequence += 1;
     const payload = toPublishableBytes(
-      encodePlayerPresenceMessage(state, {
-        sequence: this.sequence,
-        sentAt: Date.now(),
-      }),
+      encodePlayerPresenceMessage(state, { sequence: this.sequence, sentAt: Date.now() }),
     );
-
     try {
       await this.room.localParticipant.publishData(payload, {
         reliable: false,
@@ -280,14 +237,11 @@ export class PresenceSession {
     voiceRoomName?: string | null;
   }): Promise<void> {
     if (!this.lastState) return;
-    const next: LocalPresenceState = {
+    this.lastState = {
       ...this.lastState,
-      mapRoomName:
-        partial.mapRoomName !== undefined ? partial.mapRoomName : this.lastState.mapRoomName,
-      voiceRoomName:
-        partial.voiceRoomName !== undefined ? partial.voiceRoomName : this.lastState.voiceRoomName,
+      mapRoomName: partial.mapRoomName !== undefined ? partial.mapRoomName : this.lastState.mapRoomName,
+      voiceRoomName: partial.voiceRoomName !== undefined ? partial.voiceRoomName : this.lastState.voiceRoomName,
     };
-    this.lastState = next;
     await this.publishSnapshot();
   }
 
@@ -300,11 +254,7 @@ export class PresenceSession {
     if (room) {
       this.unregisterTextStream(room);
       this.unbind(room);
-      try {
-        await room.disconnect();
-      } catch {
-        // ignore
-      }
+      try { await room.disconnect(); } catch { /* ignore */ }
     }
     this.status = 'disconnected';
     this.participantIdentity = null;
@@ -318,97 +268,58 @@ export class PresenceSession {
 
   dispose(): void {
     void this.disconnect();
-    this.chatListeners.clear();
     this.listeners.clear();
+    this.chatListeners.clear();
+  }
+
+  private bind(room: Room): void {
+    room.on(RoomEvent.ParticipantConnected, this.onParticipantConnected);
+    room.on(RoomEvent.ParticipantDisconnected, this.onParticipantDisconnected);
+    room.on(RoomEvent.Disconnected, this.onDisconnected);
+    room.on(RoomEvent.DataReceived, this.onDataReceived);
+  }
+
+  private unbind(room: Room): void {
+    room.off(RoomEvent.ParticipantConnected, this.onParticipantConnected);
+    room.off(RoomEvent.ParticipantDisconnected, this.onParticipantDisconnected);
+    room.off(RoomEvent.Disconnected, this.onDisconnected);
+    room.off(RoomEvent.DataReceived, this.onDataReceived);
   }
 
   private registerTextStream(room: Room): void {
     if (this.textStreamRoom === room) return;
-
-    if (this.textStreamRoom) {
-      this.unregisterTextStream(this.textStreamRoom);
-    }
-
     room.registerTextStreamHandler(HOUSE_CHAT_TOPIC, this.onTextStream);
     this.textStreamRoom = room;
   }
 
-  private unregisterTextStream(room: Room | null): void {
-    if (!room || this.textStreamRoom !== room) {
-      return;
-    }
-    try {
-      room.unregisterTextStreamHandler(HOUSE_CHAT_TOPIC);
-    } catch {
-      // ignore
-    }
+  private unregisterTextStream(room: Room): void {
+    if (this.textStreamRoom !== room) return;
+    room.unregisterTextStreamHandler(HOUSE_CHAT_TOPIC);
     this.textStreamRoom = null;
   }
 
   private resolveParticipantName(identity: string): string {
-    if (!this.room) return identity;
-    if (this.room.localParticipant.identity === identity) {
-      return this.room.localParticipant.name || this.participantName || identity;
-    }
-    const remote = this.room.remoteParticipants.get(identity);
-    return remote?.name || identity;
+    if (identity === this.participantIdentity) return this.participantName || identity;
+    return this.room?.remoteParticipants.get(identity)?.name || identity;
   }
 
-  private async publishSnapshot(destinationIdentities?: string[]): Promise<void> {
-    if (!this.room || this.status !== 'connected' || !this.lastState) return;
-
+  private async publishSnapshot(targetIdentities?: string[]): Promise<void> {
+    if (!this.lastState || !this.room || this.status !== 'connected') return;
     const now = Date.now();
-    if (destinationIdentities?.length === 1) {
-      const identity = destinationIdentities[0]!;
+    const targets = targetIdentities ?? [...this.room.remoteParticipants.keys()];
+    const eligible = targets.filter((identity) => {
       const last = this.lastSnapshotSentAt.get(identity) ?? 0;
-      if (now - last < SNAPSHOT_MIN_INTERVAL_MS) return;
+      if (now - last < SNAPSHOT_MIN_INTERVAL_MS) return false;
       this.lastSnapshotSentAt.set(identity, now);
-    }
-
-    const generation = this.generation;
-    this.sequence += 1;
-    const payload = toPublishableBytes(
-      encodePlayerPresenceMessage(this.lastState, {
-        sequence: this.sequence,
-        sentAt: now,
-      }),
-    );
-
-    try {
-      await this.room.localParticipant.publishData(payload, {
-        reliable: true,
-        topic: PLAYER_PRESENCE_TOPIC,
-        destinationIdentities,
-      });
-      if (generation !== this.generation) return;
-    } catch {
-      this.logPublishErrorOnce();
-    }
+      return true;
+    });
+    if (targetIdentities && eligible.length === 0) return;
+    await this.publishPresence(this.lastState);
+    this.positionSyncStatus = 'syncing';
+    this.emit();
   }
 
-  private forgetRemote(identity: string): void {
-    this.lastAcceptedSequence.delete(identity);
-    this.lastSnapshotSentAt.delete(identity);
-    if (this.knownRemotes.delete(identity)) {
-      dispatchRemotePlayerRemove(identity);
-      this.emit();
-    } else {
-      dispatchRemotePlayerRemove(identity);
-    }
-  }
-
-  private clearRemotes(): void {
-    this.knownRemotes.clear();
-    this.lastAcceptedSequence.clear();
-    this.lastSnapshotSentAt.clear();
-    dispatchRemotePlayersClear();
-  }
-
-  /**
-   * Presence Room membership is the source of truth for remote visibility.
-   * Packet gaps alone must not remove remotes; only clean up identities that
-   * are no longer in `room.remoteParticipants` (missed disconnect events).
-   */
+  /** Presence membership, not packet age, owns remote-player lifetime. */
   private startWatchdog(): void {
     this.stopWatchdog();
     this.watchdog = setInterval(() => {
@@ -418,52 +329,46 @@ export class PresenceSession {
           this.forgetRemote(identity);
         }
       }
-    }, 2_000);
+      void this.publishSnapshot();
+    }, 5_000);
   }
 
   private stopWatchdog(): void {
-    if (this.watchdog) {
-      clearInterval(this.watchdog);
-      this.watchdog = null;
-    }
+    if (this.watchdog) clearInterval(this.watchdog);
+    this.watchdog = null;
   }
 
-  private bind(room: Room): void {
-    room
-      .on(RoomEvent.ParticipantConnected, this.onParticipantConnected)
-      .on(RoomEvent.ParticipantDisconnected, this.onParticipantDisconnected)
-      .on(RoomEvent.Disconnected, this.onDisconnected)
-      .on(RoomEvent.DataReceived, this.onDataReceived);
+  private forgetRemote(identity: string): void {
+    this.knownRemotes.delete(identity);
+    this.lastAcceptedSequence.delete(identity);
+    this.lastSnapshotSentAt.delete(identity);
+    dispatchRemotePlayerRemove(identity);
   }
 
-  private unbind(room: Room): void {
-    room
-      .off(RoomEvent.ParticipantConnected, this.onParticipantConnected)
-      .off(RoomEvent.ParticipantDisconnected, this.onParticipantDisconnected)
-      .off(RoomEvent.Disconnected, this.onDisconnected)
-      .off(RoomEvent.DataReceived, this.onDataReceived);
-  }
-
-  private teardownRoom(): void {
-    this.stopWatchdog();
-    const room = this.room;
-    this.room = null;
-    if (room) {
-      this.unregisterTextStream(room);
-      this.unbind(room);
-    }
+  private clearRemotes(): void {
+    this.knownRemotes.clear();
+    this.lastAcceptedSequence.clear();
+    dispatchRemotePlayersClear();
   }
 
   private countOnline(): number {
-    if (!this.room) return 0;
+    if (!this.room || this.status !== 'connected') return 0;
     return 1 + this.room.remoteParticipants.size;
+  }
+
+  private teardownRoom(): void {
+    if (!this.room) return;
+    this.unregisterTextStream(this.room);
+    this.unbind(this.room);
+    this.room = null;
+    this.stopWatchdog();
   }
 
   private logPublishErrorOnce(): void {
     const now = Date.now();
     if (now - this.lastPublishErrorLogAt < POSITION_PUBLISH_ERROR_LOG_COOLDOWN_MS) return;
     this.lastPublishErrorLogAt = now;
-    console.warn('[presence] publish failed');
+    console.warn('[presence] position publish failed');
   }
 
   private emit(): void {
@@ -471,5 +376,3 @@ export class PresenceSession {
     for (const listener of this.listeners) listener(snapshot);
   }
 }
-
-export { PRESENCE_ROOM_NAME };
