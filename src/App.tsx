@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { createGameConfig } from './game/houseGame2';
+import { installSeatOccupancy } from './game/installSeatOccupancy';
 import VoicePanel from './voice/VoicePanel';
 
 const MAP_LABELS = new Set(['キッチン', '廊下', 'リビング', '作業部屋', '玄関']);
@@ -20,6 +21,7 @@ export default function App() {
 
     window.addEventListener('goten:room-change', onRoomChange);
     const game = new Phaser.Game(createGameConfig(gameRootRef.current));
+    const uninstallSeatOccupancy = installSeatOccupancy(game);
 
     let labelsRemoved = false;
     let mapTweaksApplied = false;
@@ -108,6 +110,7 @@ export default function App() {
     return () => {
       window.removeEventListener('goten:room-change', onRoomChange);
       game.events.off(Phaser.Core.Events.POST_STEP, finalizeMap);
+      uninstallSeatOccupancy();
       game.destroy(true);
     };
   }, []);

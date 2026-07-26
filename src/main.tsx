@@ -1,7 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { installTokenApiFetch } from './api/tokenApiFetch';
 import './styles.css';
+
+installTokenApiFetch();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

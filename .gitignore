@@ -3,6 +3,7 @@ server/node_modules/
 
 dist/
 server/dist/
+server/.wrangler/
 
 .env
 .env.*
@@ -11,5 +12,9 @@ server/dist/
 server/.env
 server/.env.*
 !server/.env.example
+
+server/.dev.vars
+server/.dev.vars.*
+!server/.dev.vars.example
 
 .DS_Store
