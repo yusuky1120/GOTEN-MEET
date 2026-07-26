@@ -1,0 +1,6 @@
+# Copy to server/.dev.vars for `npm run worker:dev`.
+# These values match `livekit-server --dev` and are local-only defaults.
+LIVEKIT_URL=ws://localhost:7880
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
