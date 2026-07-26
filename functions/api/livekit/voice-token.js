@@ -14,6 +14,8 @@ export async function onRequest(context) {
 
   const headers = new Headers(context.request.headers);
   headers.delete('host');
+  headers.delete('origin');
+  headers.delete('referer');
 
   return fetch(`${targetBaseUrl}/api/livekit/voice-token`, {
     method: 'POST',
