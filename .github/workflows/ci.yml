@@ -45,6 +45,10 @@ jobs:
         working-directory: server
         run: npm run build
 
+      - name: Cloudflare Worker API smoke
+        working-directory: server
+        run: npm run worker:test
+
       - name: Cloudflare Worker dry run
         working-directory: server
         run: npm run worker:check
