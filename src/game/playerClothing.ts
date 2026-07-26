@@ -4,6 +4,24 @@ export type ClothingPalette = {
   shadow: string;
 };
 
+export type AvatarModel = 'male' | 'female';
+
+export const AVATAR_MODELS: readonly AvatarModel[] = ['male', 'female'] as const;
+
+export function isAvatarModel(value: unknown): value is AvatarModel {
+  return typeof value === 'string' && (AVATAR_MODELS as readonly string[]).includes(value);
+}
+
+let localAvatarModel: AvatarModel = 'male';
+
+export function setLocalAvatarModel(model: AvatarModel): void {
+  localAvatarModel = model;
+}
+
+export function getLocalAvatarModel(): AvatarModel {
+  return localAvatarModel;
+}
+
 /** Original shirt colors drawn in houseGame2 avatar textures. */
 export const DEFAULT_CLOTHING_PALETTE: ClothingPalette = {
   id: 'blue',
@@ -43,6 +61,10 @@ export function getClothingPalette(participantIdentity: string): ClothingPalette
   return PLAYER_CLOTHING_PALETTES[index] ?? DEFAULT_CLOTHING_PALETTE;
 }
 
-export function clothingTextureKey(pose: AvatarPose, variantIndex: number): string {
-  return `avatar-v${variantIndex}-${pose}`;
+export function clothingTextureKey(
+  pose: AvatarPose,
+  variantIndex: number,
+  avatarModel: AvatarModel = localAvatarModel,
+): string {
+  return `avatar-${avatarModel}-v${variantIndex}-${pose}`;
 }
