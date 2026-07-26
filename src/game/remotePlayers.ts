@@ -15,7 +15,11 @@ import {
   type RemotePlayerPositionDetail,
   type RemotePlayerRemoveDetail,
 } from './gamePositionEvents';
-import { clothingTextureKey, getPlayerClothingVariant } from './playerClothing';
+import {
+  clothingTextureKey,
+  getPlayerClothingVariant,
+  type AvatarModel,
+} from './playerClothing';
 import { dispatchRemotePlayerDistance } from './playerDistanceEvents';
 
 const REMOTE_DEPTH = 40_000;
@@ -32,6 +36,7 @@ type RemotePlayerView = {
   moving: boolean;
   mapRoomName: string | null;
   voiceRoomName: string | null;
+  avatarModel: AvatarModel;
   clothingVariant: number;
   stepping: boolean;
   lastStepAt: number;
@@ -53,9 +58,7 @@ export class RemotePlayersManager {
     this.remove(detail.participantIdentity);
   };
 
-  private readonly onClear = () => {
-    this.clear();
-  };
+  private readonly onClear = () => this.clear();
 
   constructor(private readonly scene: Phaser.Scene) {}
 
@@ -77,21 +80,16 @@ export class RemotePlayersManager {
 
   update(deltaMs: number, timeMs: number): void {
     const alpha = 1 - Math.exp((-REMOTE_INTERPOLATION_SPEED * deltaMs) / 1000);
-
-    // Visibility is owned by Presence Room membership (PresenceSession).
-    // Do not remove remotes here based on packet age or wall-clock vs Phaser time.
     for (const view of this.views.values()) {
       const dx = view.targetX - view.sprite.x;
       const dy = view.targetY - view.sprite.y;
       const distance = Math.hypot(dx, dy);
-
       if (distance > REMOTE_TELEPORT_DISTANCE) {
         view.sprite.setPosition(view.targetX, view.targetY);
       } else {
         view.sprite.x = Phaser.Math.Linear(view.sprite.x, view.targetX, alpha);
         view.sprite.y = Phaser.Math.Linear(view.sprite.y, view.targetY, alpha);
       }
-
       this.applyVisuals(view, timeMs);
     }
   }
@@ -103,19 +101,10 @@ export class RemotePlayersManager {
     options: { force?: boolean } = {},
   ): void {
     const force = options.force === true;
-
     for (const [identity, view] of this.views) {
-      const distance = Phaser.Math.Distance.Between(
-        localX,
-        localY,
-        view.sprite.x,
-        view.sprite.y,
-      );
+      const distance = Phaser.Math.Distance.Between(localX, localY, view.sprite.x, view.sprite.y);
       const elapsed = timeMs - view.lastDistanceEmitAt;
-      if (!force && elapsed < DISTANCE_UPDATE_INTERVAL_MS) {
-        continue;
-      }
-
+      if (!force && elapsed < DISTANCE_UPDATE_INTERVAL_MS) continue;
       view.lastEmittedDistance = distance;
       view.lastDistanceEmitAt = timeMs;
       dispatchRemotePlayerDistance({
@@ -128,9 +117,7 @@ export class RemotePlayersManager {
   }
 
   clear(): void {
-    for (const identity of [...this.views.keys()]) {
-      this.remove(identity);
-    }
+    for (const identity of [...this.views.keys()]) this.remove(identity);
   }
 
   destroy(): void {
@@ -145,7 +132,7 @@ export class RemotePlayersManager {
       position.participantIdentity,
     ).slice(0, MAX_DISPLAY_NAME_LENGTH);
     const clothingVariant = getPlayerClothingVariant(position.participantIdentity);
-    ensureClothingVariantTextures(this.scene, clothingVariant);
+    ensureClothingVariantTextures(this.scene, clothingVariant, position.avatarModel);
 
     if (!existing) {
       const shadow = this.scene.add.ellipse(
@@ -159,9 +146,8 @@ export class RemotePlayersManager {
       const sprite = this.scene.add.sprite(
         position.x,
         position.y,
-        clothingTextureKey('idle', clothingVariant),
+        clothingTextureKey('idle', clothingVariant, position.avatarModel),
       );
-      // Do NOT setTint — clothing color comes from palette-swapped textures.
       const nameLabel = this.scene.add
         .text(position.x, position.y - 39, labelText, {
           fontFamily: 'sans-serif',
@@ -192,6 +178,7 @@ export class RemotePlayersManager {
         moving: position.moving,
         mapRoomName: position.mapRoomName,
         voiceRoomName: position.voiceRoomName,
+        avatarModel: position.avatarModel,
         clothingVariant,
         stepping: false,
         lastStepAt: 0,
@@ -213,9 +200,11 @@ export class RemotePlayersManager {
     existing.nameLabel.setText(labelText);
     existing.roomLabel.setText(position.mapRoomName ?? '');
 
-    if (wasMoving && !position.moving) {
-      existing.lastDistanceEmitAt = 0;
+    if (existing.avatarModel !== position.avatarModel) {
+      existing.avatarModel = position.avatarModel;
+      ensureClothingVariantTextures(this.scene, existing.clothingVariant, existing.avatarModel);
     }
+    if (wasMoving && !position.moving) existing.lastDistanceEmitAt = 0;
   }
 
   private remove(identity: string): void {
@@ -230,23 +219,26 @@ export class RemotePlayersManager {
 
   private applyVisuals(view: RemotePlayerView, timeMs: number): void {
     view.sprite.setFlipX(view.direction === 'left');
-
     if (view.moving) {
       if (timeMs - view.lastStepAt > 170) {
         view.stepping = !view.stepping;
         view.lastStepAt = timeMs;
       }
       view.sprite.setTexture(
-        clothingTextureKey(view.stepping ? 'step' : 'idle', view.clothingVariant),
+        clothingTextureKey(
+          view.stepping ? 'step' : 'idle',
+          view.clothingVariant,
+          view.avatarModel,
+        ),
       );
     } else {
       view.stepping = false;
-      view.sprite.setTexture(clothingTextureKey('idle', view.clothingVariant));
+      view.sprite.setTexture(
+        clothingTextureKey('idle', view.clothingVariant, view.avatarModel),
+      );
     }
 
-    view.shadow
-      .setPosition(view.sprite.x, view.sprite.y + 19)
-      .setDepth(REMOTE_DEPTH - 1);
+    view.shadow.setPosition(view.sprite.x, view.sprite.y + 19).setDepth(REMOTE_DEPTH - 1);
     view.sprite.setDepth(REMOTE_DEPTH);
     view.nameLabel.setPosition(view.sprite.x, view.sprite.y - 39).setDepth(REMOTE_LABEL_DEPTH);
     view.roomLabel.setPosition(view.sprite.x, view.sprite.y - 24).setDepth(REMOTE_LABEL_DEPTH);
