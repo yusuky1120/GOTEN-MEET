@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { installTokenApiFetch } from './api/tokenApiFetch';
 import './styles.css';
+import './ui-layout.css';
 
 installTokenApiFetch();
 
