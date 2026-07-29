@@ -32,13 +32,21 @@ export default function HouseChatPanel({
   onSend,
 }: HouseChatPanelProps) {
   const [draft, setDraft] = useState('');
+  const [collapsed, setCollapsed] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = listRef.current;
-    if (!el) return;
+    if (!el || collapsed) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  }, [messages, collapsed]);
+
+  useEffect(() => {
+    document.documentElement.dataset.houseChat = collapsed ? 'collapsed' : 'open';
+    return () => {
+      delete document.documentElement.dataset.houseChat;
+    };
+  }, [collapsed]);
 
   const charCount = countChatCharacters(normalizeChatText(draft));
   const canSubmit =
@@ -66,73 +74,99 @@ export default function HouseChatPanel({
   }
 
   return (
-    <aside className="house-chat" aria-label="House chat">
+    <aside
+      className={collapsed ? 'house-chat house-chat--collapsed' : 'house-chat'}
+      aria-label="House chat"
+    >
       <div className="house-chat__header">
-        <h2>ハウスチャット</h2>
-        <p className="house-chat__status">
-          {presenceConnected ? 'Presence接続済み' : '未接続'}
-        </p>
+        {!collapsed ? (
+          <div className="house-chat__heading">
+            <h2>ハウスチャット</h2>
+            <p className="house-chat__status">
+              {presenceConnected ? 'Presence接続済み' : '未接続'}
+            </p>
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          className="house-chat__toggle"
+          onClick={() => setCollapsed((value) => !value)}
+          aria-label={collapsed ? 'ハウスチャットを開く' : 'ハウスチャットを閉じる'}
+          aria-expanded={!collapsed}
+          title={collapsed ? 'ハウスチャットを開く' : 'ハウスチャットを閉じる'}
+        >
+          {collapsed ? '←' : '→'}
+        </button>
       </div>
 
-      {!presenceConnected ? (
-        <p className="house-chat__hint">Presenceに接続するとチャットできます</p>
+      {collapsed ? (
+        <span className="house-chat__collapsed-label" aria-hidden="true">
+          CHAT
+        </span>
       ) : (
         <>
-          <div ref={listRef} className="house-chat__list" role="log" aria-live="polite">
-            {messages.length === 0 ? (
-              <p className="house-chat__empty">まだメッセージはありません</p>
-            ) : (
-              messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={
-                    message.own
-                      ? 'house-chat__message house-chat__message--own'
-                      : 'house-chat__message'
-                  }
-                >
-                  <span className="house-chat__name">[{message.participantName}]</span>{' '}
-                  <span className="house-chat__text">{message.text}</span>
-                  {formatTime(message.sentAt) ? (
-                    <span className="house-chat__time">{formatTime(message.sentAt)}</span>
-                  ) : null}
-                </div>
-              ))
-            )}
-          </div>
+          {!presenceConnected ? (
+            <p className="house-chat__hint">Presenceに接続するとチャットできます</p>
+          ) : (
+            <>
+              <div ref={listRef} className="house-chat__list" role="log" aria-live="polite">
+                {messages.length === 0 ? (
+                  <p className="house-chat__empty">まだメッセージはありません</p>
+                ) : (
+                  messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={
+                        message.own
+                          ? 'house-chat__message house-chat__message--own'
+                          : 'house-chat__message'
+                      }
+                    >
+                      <span className="house-chat__name">[{message.participantName}]</span>{' '}
+                      <span className="house-chat__text">{message.text}</span>
+                      {formatTime(message.sentAt) ? (
+                        <span className="house-chat__time">{formatTime(message.sentAt)}</span>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </div>
 
-          <form className="house-chat__composer" onSubmit={handleSubmit}>
-            <input
-              type="text"
-              value={draft}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                if (error) onClearError();
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder="メッセージを入力"
-              maxLength={MAX_CHAT_MESSAGE_LENGTH * 4}
-              disabled={!presenceConnected || sending}
-              autoComplete="off"
-              enterKeyHint="send"
-            />
-            <div className="house-chat__composer-row">
-              <span className="house-chat__counter">
-                {charCount} / {MAX_CHAT_MESSAGE_LENGTH}
-              </span>
-              <button type="submit" disabled={!canSubmit}>
-                {sending ? '送信中…' : '送信'}
-              </button>
-            </div>
-          </form>
+              <form className="house-chat__composer" onSubmit={handleSubmit}>
+                <input
+                  type="text"
+                  value={draft}
+                  onChange={(event) => {
+                    setDraft(event.target.value);
+                    if (error) onClearError();
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="メッセージを入力"
+                  maxLength={MAX_CHAT_MESSAGE_LENGTH * 4}
+                  disabled={!presenceConnected || sending}
+                  autoComplete="off"
+                  enterKeyHint="send"
+                />
+                <div className="house-chat__composer-row">
+                  <span className="house-chat__counter">
+                    {charCount} / {MAX_CHAT_MESSAGE_LENGTH}
+                  </span>
+                  <button type="submit" disabled={!canSubmit}>
+                    {sending ? '送信中…' : '送信'}
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
+
+          {error ? (
+            <p className="house-chat__error" role="alert">
+              {error}
+            </p>
+          ) : null}
         </>
       )}
-
-      {error ? (
-        <p className="house-chat__error" role="alert">
-          {error}
-        </p>
-      ) : null}
     </aside>
   );
 }
