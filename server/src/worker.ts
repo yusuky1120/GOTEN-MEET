@@ -55,12 +55,48 @@ function allowedOrigins(bindings: WorkerBindings): Set<string> {
   );
 }
 
+/**
+ * Exact ALLOWED_ORIGINS matches, plus Cloudflare Pages per-deployment hosts
+ * when the project apex (e.g. https://goten-meet.pages.dev) is allowlisted.
+ */
+export function isOriginAllowed(origin: string, allowed: Set<string>): boolean {
+  if (!origin) return false;
+  if (allowed.has(origin)) return true;
+
+  let originUrl: URL;
+  try {
+    originUrl = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (originUrl.protocol !== 'https:') return false;
+
+  for (const entry of allowed) {
+    let allowedUrl: URL;
+    try {
+      allowedUrl = new URL(entry);
+    } catch {
+      continue;
+    }
+    if (allowedUrl.protocol !== 'https:') continue;
+    if (!allowedUrl.hostname.endsWith('.pages.dev')) continue;
+    if (
+      originUrl.hostname === allowedUrl.hostname ||
+      originUrl.hostname.endsWith(`.${allowedUrl.hostname}`)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 const app = new Hono<WorkerEnv>();
 
 app.use('/api/*', async (c, next) => {
   const origin = c.req.header('Origin')?.replace(/\/$/, '') ?? '';
   if (origin) {
-    if (!allowedOrigins(c.env).has(origin)) {
+    if (!isOriginAllowed(origin, allowedOrigins(c.env))) {
       return c.json(
         {
           error: {

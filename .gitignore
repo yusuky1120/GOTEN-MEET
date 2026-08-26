@@ -4,6 +4,7 @@ server/node_modules/
 dist/
 server/dist/
 server/.wrangler/
+.wrangler/
 
 .env
 .env.*

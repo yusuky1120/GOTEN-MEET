@@ -42,6 +42,26 @@ const rejectedOrigin = await app.request(
 );
 assert(rejectedOrigin.status === 403, 'unknown CORS origin is rejected');
 
+const pagesApex = 'https://goten-meet.pages.dev';
+const pagesBindings: WorkerBindings = {
+  ...bindings,
+  ALLOWED_ORIGINS: pagesApex,
+};
+const pagesPreview = await app.request(
+  'http://worker.test/api/livekit/session',
+  {
+    method: 'OPTIONS',
+    headers: { Origin: 'https://e18f60d1.goten-meet.pages.dev' },
+  },
+  pagesBindings,
+);
+assert(pagesPreview.status === 204, 'Pages deployment subdomain preflight succeeds');
+assert(
+  pagesPreview.headers.get('Access-Control-Allow-Origin') ===
+    'https://e18f60d1.goten-meet.pages.dev',
+  'Pages deployment subdomain origin is echoed',
+);
+
 const session = await app.request(
   'http://worker.test/api/livekit/session',
   {

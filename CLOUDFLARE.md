@@ -76,10 +76,10 @@ npx wrangler@4 secret put ALLOWED_ORIGINS
 For `ALLOWED_ORIGINS`, enter the exact frontend origin without a trailing slash, for example:
 
 ```text
-https://goten-meet.pages.dev
+https://goten-meet.pages.dev,http://127.0.0.1:8788,http://localhost:8788
 ```
 
-Multiple origins can be comma-separated while migrating between GitHub Pages and Cloudflare Pages.
+When `https://goten-meet.pages.dev` is listed, per-deployment Pages hosts such as `https://<id>.goten-meet.pages.dev` are also accepted. Multiple origins can be comma-separated while migrating between GitHub Pages and Cloudflare Pages.
 
 ## Deploy the Worker
 
@@ -98,7 +98,16 @@ curl -i https://<worker-host>/health
 
 ## Configure the frontend
 
-For Cloudflare Pages, configure these build variables:
+For Cloudflare Pages, build with the Worker origin baked in (direct `pages deploy` uploads `dist`):
+
+```bash
+VITE_TOKEN_API_BASE_URL=https://<worker-host> VITE_BASE_PATH=/ npm run build:pages
+npx wrangler pages deploy dist --project-name=goten-meet --branch=main --commit-dirty=true
+```
+
+`build:pages` refuses to produce a Pages artifact when `VITE_TOKEN_API_BASE_URL` is empty, because the SPA would POST `/api/livekit/session` to Pages itself and receive HTTP 405.
+
+If you use the Cloudflare Pages dashboard build pipeline instead, set these build variables:
 
 ```text
 VITE_TOKEN_API_BASE_URL=https://<worker-host>
@@ -108,7 +117,7 @@ VITE_BASE_PATH=/
 Build command:
 
 ```text
-npm run build
+npm run build:pages
 ```
 
 Output directory:

@@ -61,6 +61,17 @@ export function installTokenApiFetch(): void {
   const apiBaseUrl = normalizeBaseUrl(import.meta.env.VITE_TOKEN_API_BASE_URL);
   const originalFetch = window.fetch.bind(window);
 
+  if (
+    !apiBaseUrl &&
+    typeof window !== 'undefined' &&
+    /\.pages\.dev$/i.test(window.location.hostname)
+  ) {
+    console.error(
+      '[GOTEN MEET] VITE_TOKEN_API_BASE_URL is empty on Cloudflare Pages. ' +
+        'Session POSTs will hit Pages (HTTP 405). Rebuild with the Worker URL.',
+    );
+  }
+
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const response = await originalFetch(rewriteApiInput(input, apiBaseUrl), init);
     if (isSessionRequest(input)) await captureSessionIdentity(response);
