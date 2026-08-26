@@ -3,7 +3,12 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  const base = env.VITE_BASE_PATH?.trim() || '/GOTEN-MEET/';
+  // Cloudflare Pages serves from the domain root (goten-meet.pages.dev).
+  // A non-root base like `/GOTEN-MEET/` makes index.html request assets under
+  // that prefix; Pages then SPA-fallbacks those paths to HTML and the app
+  // white-screens because the module script never executes.
+  const fromEnv = env.VITE_BASE_PATH?.trim();
+  const base = fromEnv && fromEnv.length > 0 ? fromEnv : '/';
 
   return {
     plugins: [react()],
