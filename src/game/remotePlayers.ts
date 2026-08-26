@@ -15,7 +15,11 @@ import {
   type RemotePlayerPositionDetail,
   type RemotePlayerRemoveDetail,
 } from './gamePositionEvents';
-import { clothingTextureKey, getPlayerClothingVariant } from './playerClothing';
+import {
+  clothingTextureKey,
+  getPlayerClothingVariant,
+  type AvatarModel,
+} from './playerClothing';
 import { dispatchRemotePlayerDistance } from './playerDistanceEvents';
 
 const REMOTE_DEPTH = 40_000;
@@ -31,6 +35,7 @@ type RemotePlayerView = {
   moving: boolean;
   voiceRoomName: string | null;
   clothingVariant: number;
+  avatarModel: AvatarModel;
   stepping: boolean;
   lastStepAt: number;
   lastEmittedDistance: number;
@@ -143,7 +148,8 @@ export class RemotePlayersManager {
       position.participantIdentity,
     ).slice(0, MAX_DISPLAY_NAME_LENGTH);
     const clothingVariant = getPlayerClothingVariant(position.participantIdentity);
-    ensureClothingVariantTextures(this.scene, clothingVariant);
+    const avatarModel = position.avatarModel;
+    ensureClothingVariantTextures(this.scene, clothingVariant, avatarModel);
 
     if (!existing) {
       const shadow = this.scene.add.ellipse(
@@ -157,7 +163,7 @@ export class RemotePlayersManager {
       const sprite = this.scene.add.sprite(
         position.x,
         position.y,
-        clothingTextureKey('idle', clothingVariant),
+        clothingTextureKey('idle', clothingVariant, avatarModel),
       );
       // Do NOT setTint — clothing color comes from palette-swapped textures.
       const nameLabel = this.scene.add
@@ -180,6 +186,7 @@ export class RemotePlayersManager {
         moving: position.moving,
         voiceRoomName: position.voiceRoomName,
         clothingVariant,
+        avatarModel,
         stepping: false,
         lastStepAt: 0,
         lastEmittedDistance: Number.NaN,
@@ -196,6 +203,7 @@ export class RemotePlayersManager {
     existing.direction = position.direction;
     existing.moving = position.moving;
     existing.voiceRoomName = position.voiceRoomName;
+    existing.avatarModel = avatarModel;
     existing.nameLabel.setText(labelText);
 
     if (wasMoving && !position.moving) {
@@ -221,11 +229,17 @@ export class RemotePlayersManager {
         view.lastStepAt = timeMs;
       }
       view.sprite.setTexture(
-        clothingTextureKey(view.stepping ? 'step' : 'idle', view.clothingVariant),
+        clothingTextureKey(
+          view.stepping ? 'step' : 'idle',
+          view.clothingVariant,
+          view.avatarModel,
+        ),
       );
     } else {
       view.stepping = false;
-      view.sprite.setTexture(clothingTextureKey('idle', view.clothingVariant));
+      view.sprite.setTexture(
+        clothingTextureKey('idle', view.clothingVariant, view.avatarModel),
+      );
     }
 
     view.shadow

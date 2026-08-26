@@ -14,6 +14,7 @@ function assert(condition: boolean, message: string): void {
 }
 
 const state: LocalPresenceState = {
+  avatarModel: 'male',
   x: 100,
   y: 200,
   direction: 'down',

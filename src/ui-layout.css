@@ -6,47 +6,18 @@
 }
 
 .game-panel {
-  right: var(--goten-house-chat-width) !important;
+  right: 0 !important;
   transition: right 180ms ease;
 }
 
-html[data-house-chat='collapsed'] .game-panel {
+.app-shell.is-joined .game-panel {
+  right: var(--goten-house-chat-width) !important;
+}
+
+html[data-house-chat='collapsed'] .app-shell.is-joined .game-panel {
   right: var(--goten-house-chat-rail-width) !important;
 }
 
-.left-panel-stack {
-  position: static !important;
-  left: auto !important;
-  right: auto !important;
-  bottom: auto !important;
-  width: 0 !important;
-  height: 0 !important;
-  max-height: none !important;
-  display: block !important;
-  overflow: visible !important;
-}
-
-.voice-panel-host {
-  display: contents;
-}
-
-.voice-panel-host .voice-panel {
-  display: none;
-}
-
-.voice-panel-host.is-open .voice-panel {
-  position: fixed;
-  left: 78px;
-  top: calc(var(--goten-topbar-height) + 18px);
-  bottom: 18px;
-  z-index: 72;
-  display: grid;
-  width: min(380px, calc(100vw - 110px));
-  max-height: none;
-  overflow-y: auto;
-}
-
-.voice-panel-close,
 .panel-close-button {
   width: 32px;
   height: 32px;
@@ -56,19 +27,6 @@ html[data-house-chat='collapsed'] .game-panel {
   color: #f7f2e7;
   cursor: pointer;
   line-height: 1;
-}
-
-.voice-panel-close {
-  position: fixed;
-  left: calc(78px + min(380px, calc(100vw - 110px)) - 40px);
-  top: calc(var(--goten-topbar-height) + 26px);
-  z-index: 74;
-  display: none;
-}
-
-.voice-panel-close.is-visible {
-  display: inline-grid;
-  place-items: center;
 }
 
 .help-card {
@@ -244,19 +202,6 @@ html[data-house-chat='collapsed'] .game-panel {
     --goten-house-chat-width: min(310px, 76vw);
     --goten-house-chat-rail-width: 44px;
     --goten-floating-control-size: 42px;
-  }
-
-  .voice-panel-host.is-open .voice-panel {
-    left: 64px;
-    top: calc(var(--goten-topbar-height) + 10px);
-    bottom: 10px;
-    width: calc(100vw - 74px);
-  }
-
-  .voice-panel-close {
-    left: auto;
-    right: 16px;
-    top: calc(var(--goten-topbar-height) + 18px);
   }
 
   .help-card {

@@ -7,6 +7,7 @@ import {
   type LocalPlayerPosition,
   type PlayerDirection,
 } from './playerPositionTypes';
+import { getLocalAvatarModel, isAvatarModel } from '../game/playerClothing';
 import { PLAYER_PRESENCE_TOPIC } from '../presence/presenceConstants';
 import type { LocalPresenceState, PlayerPresenceMessage } from '../presence/presenceTypes';
 
@@ -28,6 +29,7 @@ export function encodePlayerPresenceMessage(
   const message: PlayerPresenceMessage = {
     type: 'player-presence',
     version: 2,
+    avatarModel: state.avatarModel,
     x: state.x,
     y: state.y,
     direction: state.direction,
@@ -87,6 +89,7 @@ export function decodePlayerPresencePayload(
   return {
     type: 'player-presence',
     version: 2,
+    avatarModel: isAvatarModel(record.avatarModel) ? record.avatarModel : 'male',
     x: record.x,
     y: record.y,
     direction: record.direction,
@@ -104,6 +107,7 @@ export function toPresenceState(
   voiceRoomName: string | null,
 ): LocalPresenceState {
   return {
+    avatarModel: getLocalAvatarModel(),
     x: position.x,
     y: position.y,
     direction: position.direction,

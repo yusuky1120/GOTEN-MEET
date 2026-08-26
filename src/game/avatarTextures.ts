@@ -1,7 +1,10 @@
 import type Phaser from 'phaser';
 import {
+  AVATAR_MODELS,
   clothingTextureKey,
   DEFAULT_CLOTHING_PALETTE,
+  getLocalAvatarModel,
+  type AvatarModel,
   type AvatarPose,
   type ClothingPalette,
   PLAYER_CLOTHING_PALETTES,
@@ -11,16 +14,24 @@ function drawAvatar(
   context: CanvasRenderingContext2D,
   pose: AvatarPose,
   clothing: ClothingPalette,
+  avatarModel: AvatarModel,
 ): void {
   const stepping = pose === 'step';
   const sitting = pose === 'sit';
+  const female = avatarModel === 'female';
 
   context.imageSmoothingEnabled = false;
   context.clearRect(0, 0, 40, 56);
 
-  context.fillStyle = '#26352d';
-  context.fillRect(11, 3, 18, 5);
+  // Hair silhouette. The female model has longer side hair and a softer crown.
+  context.fillStyle = female ? '#4d302d' : '#26352d';
+  context.fillRect(female ? 10 : 11, 3, female ? 20 : 18, 5);
   context.fillRect(8, 8, 24, 11);
+  if (female) {
+    context.fillRect(8, 17, 5, 13);
+    context.fillRect(27, 17, 5, 13);
+  }
+
   context.fillStyle = '#efc09b';
   context.fillRect(11, 10, 18, 13);
   context.fillStyle = '#2b2b29';
@@ -32,15 +43,23 @@ function drawAvatar(
   context.fillStyle = '#e5ad86';
   context.fillRect(17, 23, 6, 4);
   context.fillStyle = clothing.base;
-  context.fillRect(9, 27, 22, sitting ? 16 : 18);
+  if (female) {
+    context.fillRect(10, 27, 20, sitting ? 15 : 16);
+    context.fillRect(8, 39, 24, sitting ? 6 : 8);
+  } else {
+    context.fillRect(9, 27, 22, sitting ? 16 : 18);
+  }
   context.fillStyle = clothing.shadow;
   context.fillRect(6, 29, 5, 15);
   context.fillRect(29, 29, 5, 15);
+  if (female) {
+    context.fillRect(8, 43, 24, 3);
+  }
   context.fillStyle = '#efc09b';
   context.fillRect(6, 42, 5, 4);
   context.fillRect(29, 42, 5, 4);
 
-  context.fillStyle = '#2b3540';
+  context.fillStyle = female ? '#403743' : '#2b3540';
   if (sitting) {
     context.fillRect(10, 42, 9, 7);
     context.fillRect(21, 42, 9, 7);
@@ -63,28 +82,39 @@ function drawAvatar(
 }
 
 export function ensureDefaultAvatarTextures(scene: Phaser.Scene): void {
-  ensureClothingVariantTextures(scene, 0);
-  // Keep legacy keys pointing at default blue for any leftover references.
+  ensureClothingVariantTextures(scene, 0, getLocalAvatarModel());
+  // Keep legacy keys pointing at the default male blue model for leftover references.
   for (const pose of ['idle', 'step', 'sit'] as const) {
     const legacy = `avatar-${pose}`;
-    const variantKey = clothingTextureKey(pose, 0);
+    const variantKey = clothingTextureKey(pose, 0, 'male');
     if (!scene.textures.exists(legacy) && scene.textures.exists(variantKey)) {
-      // Phaser can't alias easily; draw once into legacy key.
-      createAvatarTexture(scene, legacy, pose, DEFAULT_CLOTHING_PALETTE);
+      createAvatarTexture(scene, legacy, pose, DEFAULT_CLOTHING_PALETTE, 'male');
     }
   }
 }
 
-export function ensureClothingVariantTextures(scene: Phaser.Scene, variantIndex: number): void {
+export function ensureClothingVariantTextures(
+  scene: Phaser.Scene,
+  variantIndex: number,
+  avatarModel: AvatarModel = getLocalAvatarModel(),
+): void {
   const palette = PLAYER_CLOTHING_PALETTES[variantIndex] ?? DEFAULT_CLOTHING_PALETTE;
   for (const pose of ['idle', 'step', 'sit'] as const) {
-    createAvatarTexture(scene, clothingTextureKey(pose, variantIndex), pose, palette);
+    createAvatarTexture(
+      scene,
+      clothingTextureKey(pose, variantIndex, avatarModel),
+      pose,
+      palette,
+      avatarModel,
+    );
   }
 }
 
 export function ensureAllClothingTextures(scene: Phaser.Scene): void {
-  for (let i = 0; i < PLAYER_CLOTHING_PALETTES.length; i += 1) {
-    ensureClothingVariantTextures(scene, i);
+  for (const avatarModel of AVATAR_MODELS) {
+    for (let i = 0; i < PLAYER_CLOTHING_PALETTES.length; i += 1) {
+      ensureClothingVariantTextures(scene, i, avatarModel);
+    }
   }
 }
 
@@ -93,10 +123,11 @@ function createAvatarTexture(
   key: string,
   pose: AvatarPose,
   clothing: ClothingPalette,
+  avatarModel: AvatarModel,
 ): void {
   if (scene.textures.exists(key)) return;
   const texture = scene.textures.createCanvas(key, 40, 56);
   if (!texture) return;
-  drawAvatar(texture.context, pose, clothing);
+  drawAvatar(texture.context, pose, clothing, avatarModel);
   texture.refresh();
 }
